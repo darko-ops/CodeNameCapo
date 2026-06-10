@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bouncr — playground</title>
+<style>
+  body { margin: 0; font: 16px/1.5 ui-sans-serif, system-ui, sans-serif; color: #1a1a1f; background: #faf9f6; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 56px 24px; }
+  h1 { font-size: 34px; letter-spacing: -0.5px; margin: 0 0 8px; }
+  p.lede { color: #555; font-size: 18px; margin: 0 0 28px; }
+  .card { border: 1px solid #e6e3da; border-radius: 16px; padding: 22px; background: #fff; }
+  .price { font-size: 40px; font-weight: 800; margin: 4px 0 2px; }
+  .price s { color: #aaa; font-weight: 400; font-size: 22px; }
+  button.cta { margin-top: 14px; background: #7C3AED; color: #fff; border: 0; border-radius: 10px; padding: 12px 22px; font-size: 16px; font-weight: 700; cursor: pointer; }
+  #banner { display: none; margin: 18px 0 0; padding: 14px 16px; border-radius: 12px; background: #ecfdf3; color: #065f46; border: 1px solid #a7f3d0; }
+  #panel { margin-top: 28px; height: 560px; max-height: 70vh; border: 1px solid #e6e3da; border-radius: 16px; overflow: hidden; }
+  code { background: #f1efe9; padding: 2px 6px; border-radius: 5px; font-size: 14px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Don't pay the sticker price.</h1>
+    <p class="lede">This is Obius Pro. The list is $30/mo — but Vinny on the door decides what <em>you</em> pay. Make your case.</p>
+
+    <div class="card">
+      <div>Obius Pro</div>
+      <div class="price"><s>$30</s> negotiable</div>
+      <button class="cta" id="open">Talk to the bouncer</button>
+      <div id="banner"></div>
+    </div>
+
+    <div id="panel"></div>
+
+    <p style="margin-top:28px;color:#777;font-size:14px">
+      Embed this anywhere with one tag: <code>&lt;script src="/embed.js" data-plan="pro_monthly"&gt;&lt;/script&gt;</code>
+    </p>
+  </div>
+
+  <script src="/embed.js"></script>
+  <script>
+    var mounted = null;
+    document.getElementById("open").addEventListener("click", function () {
+      if (mounted) return;
+      mounted = window.Bouncr.mount({
+        el: "#panel",
+        planId: "pro_monthly",
+        userRef: "playground_" + Math.random().toString(36).slice(2, 8),
+        theme: { accent: "7C3AED" },
+        fallbackUrl: "#",
+        // Demo: show the deal instead of navigating to the (sandbox) checkout URL.
+        onDeal: function (d) {
+          var b = document.getElementById("banner");
+          b.style.display = "block";
+          b.innerHTML = "🎉 You negotiated <b>$" + d.price + "/mo</b> — checkout: <code>" + (d.checkoutUrl || "n/a") + "</code>";
+        },
+        onWalkaway: function () {
+          var b = document.getElementById("banner");
+          b.style.display = "block";
+          b.style.background = "#fef2f2"; b.style.color = "#991b1b"; b.style.borderColor = "#fecaca";
+          b.textContent = "Vinny walked. Standard pricing it is.";
+        },
+      });
+    });
+  </script>
+</body>
+</html>

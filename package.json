@@ -1,0 +1,35 @@
+{
+  "name": "@bouncr/policy-engine",
+  "version": "0.1.0",
+  "description": "Bouncr deterministic pricing policy engine — pure functions, zero runtime deps.",
+  "type": "module",
+  "main": "./dist/engine.js",
+  "types": "./dist/engine.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "haggle": "tsx src/cli.ts",
+    "serve": "tsx src/server.ts"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.69.0",
+    "@hono/node-server": "^2.0.4",
+    "hono": "^4.12.25",
+    "postgres": "^3.4.9",
+    "stripe": "^22.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "fast-check": "^3.23.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

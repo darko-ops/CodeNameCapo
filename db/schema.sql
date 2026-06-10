@@ -1,0 +1,109 @@
+-- Bouncr data model (Spec §8). Postgres / Supabase.
+-- Phase 1 tables: merchants, plans, sessions, turns, deals, events.
+-- usage_cycles (renegotiation, §6) is Phase 4 and intentionally omitted here.
+--
+-- Timestamps that the engine reasons about (opened_at, expires_at) are stored as
+-- epoch-millisecond bigints to match the engine's clock exactly; bookkeeping
+-- timestamps (created_at, settled_at) are likewise epoch ms for record parity.
+
+create table if not exists merchants (
+  id                 text primary key,
+  name               text not null,
+  stripe_connect_id  text,
+  created_at         bigint not null
+);
+
+create table if not exists plans (
+  id            text primary key,
+  merchant_id   text not null references merchants(id),
+  plan_key      text not null,
+  currency      text not null default 'usd',
+  config_jsonb  jsonb not null,          -- engine Config
+  persona_jsonb jsonb not null,          -- Persona
+  policy_jsonb  jsonb not null default '{"cooldownHours":72,"maxMessages":30}',  -- NegotiationPolicy (§12)
+  usage_jsonb   jsonb not null default '{"bandCeiling":1000,"breachCyclesRequired":3,"costPerUnit":0.004,"costPlusMargin":1.25,"renegAnchorMultiplier":1.7,"downwardEnabled":false,"downwardFloorRatio":0.1,"downwardMinCycles":3}',  -- UsagePolicy (§6)
+  version       integer not null default 1,
+  active        boolean not null default true
+);
+create index if not exists plans_merchant_idx on plans(merchant_id);
+
+-- Per-(plan, end_user_ref) walkaway cooldown (Spec §12).
+create table if not exists cooldowns (
+  plan_id      text not null references plans(id),
+  end_user_ref text not null,
+  until_ms     bigint not null,
+  primary key (plan_id, end_user_ref)
+);
+
+create table if not exists sessions (
+  id             uuid primary key default gen_random_uuid(),
+  plan_id        text not null references plans(id),
+  session_token  text not null,          -- widget-facing bearer token (§9)
+  end_user_ref   text not null,          -- merchant's opaque user id (minimal PII)
+  channel        text not null default 'web',
+  round          integer not null,
+  current_ask    numeric(12,2) not null,
+  opened_at      bigint not null,        -- epoch ms
+  expires_at     bigint not null,        -- epoch ms
+  status         text not null default 'open',  -- open|accepted|walked|expired|settled
+  config_version integer not null,
+  context        jsonb,
+  kind           text not null default 'initial',  -- initial|reneg_up|reneg_down (§6)
+  reneg_deal_id  uuid,                              -- the deal being renegotiated
+  config_override jsonb,                            -- reneg pricing config
+  created_at     bigint not null
+);
+create index if not exists sessions_plan_idx on sessions(plan_id);
+create index if not exists sessions_user_idx on sessions(end_user_ref);
+
+create table if not exists turns (
+  id          uuid primary key default gen_random_uuid(),
+  session_id  uuid not null references sessions(id),
+  role        text not null,             -- user|bouncer
+  raw_text    text not null,
+  extracted   jsonb,                     -- Extractor output (user turns)
+  action      jsonb,                     -- full policy-engine action snapshot (bouncer turns)
+  created_at  bigint not null
+);
+create index if not exists turns_session_idx on turns(session_id, created_at);
+
+create table if not exists deals (
+  id                     uuid primary key default gen_random_uuid(),
+  session_id             uuid not null references sessions(id),
+  merchant_id            text not null references merchants(id),
+  plan_id                text not null references plans(id),
+  end_user_ref           text not null,
+  price                  numeric(12,2) not null,
+  currency               text not null default 'usd',
+  status                 text not null default 'pending',  -- pending|settled|canceled
+  kind                   text not null default 'initial',  -- initial|reneg_up|reneg_down
+  stripe_checkout_id     text unique,
+  stripe_subscription_id text,
+  reneg_session_id       uuid,                       -- open renegotiation, if any (§6)
+  created_at             bigint not null,
+  settled_at             bigint
+);
+create index if not exists deals_session_idx on deals(session_id);
+create index if not exists deals_checkout_idx on deals(stripe_checkout_id);
+
+-- Usage readings per billing cycle (Spec §6.1, §8 usage_cycles).
+create table if not exists usage_cycles (
+  id            uuid primary key default gen_random_uuid(),
+  deal_id       uuid not null references deals(id),
+  cycle_index   integer not null,
+  usage_value   numeric not null,
+  band_ceiling  numeric not null,
+  breach        boolean not null,
+  breach_streak integer not null,
+  created_at    bigint not null
+);
+create index if not exists usage_deal_idx on usage_cycles(deal_id, cycle_index);
+
+-- Append-only event log (analytics raw material, Spec §8).
+create table if not exists events (
+  id         uuid primary key default gen_random_uuid(),
+  type       text not null,
+  payload    jsonb not null,
+  created_at bigint not null
+);
+create index if not exists events_type_idx on events(type, created_at);

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bouncr</title>
+<style>
+  :root {
+    --accent: #7C3AED;
+    --bg: #0e0e12;
+    --panel: #16161d;
+    --bubble-bot: #1f1f29;
+    --bubble-user: var(--accent);
+    --text: #ECECF1;
+    --muted: #8a8a99;
+    --line: #26262f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--accent); display: grid; place-items: center;
+    font-weight: 700; font-size: 16px; color: #fff; flex: 0 0 auto;
+  }
+  .who { display: flex; flex-direction: column; line-height: 1.2; }
+  .who b { font-size: 14px; }
+  .who span { font-size: 12px; color: var(--muted); }
+  .timer {
+    margin-left: auto; font-size: 12px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .timer.urgent { color: #f59e0b; font-weight: 600; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 80%; padding: 9px 13px; border-radius: 16px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.bot { background: var(--bubble-bot); border-bottom-left-radius: 5px; align-self: flex-start; }
+  .msg.user { background: var(--bubble-user); color: #fff; border-bottom-right-radius: 5px; align-self: flex-end; }
+  .typing { align-self: flex-start; color: var(--muted); font-size: 13px; padding: 4px 13px; }
+  .dot { display: inline-block; animation: blink 1.2s infinite both; }
+  .dot:nth-child(2) { animation-delay: .2s; } .dot:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100% { opacity: .2 } 40% { opacity: 1 } }
+  #chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 8px; }
+  .chip {
+    border: 1px solid var(--accent); color: var(--text); background: transparent;
+    border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+  }
+  .chip.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  .chip:active { transform: translateY(1px); }
+  form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--panel); }
+  textarea {
+    flex: 1; resize: none; background: #0c0c10; color: var(--text);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font: inherit; height: 42px;
+  }
+  button.send { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 0 18px; cursor: pointer; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  /* deal / walk screens */
+  .screen {
+    position: absolute; inset: 0; background: var(--bg);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 28px; gap: 14px;
+  }
+  .screen.show { display: flex; }
+  .deal-price { font-size: 52px; font-weight: 800; letter-spacing: -1px; }
+  .deal-price small { font-size: 18px; color: var(--muted); font-weight: 500; }
+  .deal-line { color: var(--text); max-width: 22em; font-size: 16px; }
+  .deal-cta {
+    background: var(--accent); color: #fff; border: 0; border-radius: 12px;
+    padding: 13px 26px; font-size: 16px; font-weight: 700; cursor: pointer; text-decoration: none;
+  }
+  .mark { position: absolute; bottom: 14px; font-size: 11px; color: var(--muted); letter-spacing: .3px; }
+  .mark b { color: var(--accent); }
+  a.fallback { color: var(--accent); }
+</style>
+</head>
+<body>
+  <header>
+    <div class="avatar" id="avatar">B</div>
+    <div class="who"><b id="who-name">Bouncr</b><span id="who-product">negotiate your price</span></div>
+    <div class="timer" id="timer"></div>
+  </header>
+
+  <div id="log" role="log" aria-live="polite"></div>
+  <div id="chips"></div>
+
+  <form id="form" autocomplete="off">
+    <textarea id="input" placeholder="Make your case…" aria-label="Your message" rows="1"></textarea>
+    <button class="send" id="send" type="submit">Send</button>
+  </form>
+
+  <div class="screen" id="deal-screen">
+    <div class="deal-price" id="deal-price"></div>
+    <div class="deal-line" id="deal-line"></div>
+    <a class="deal-cta" id="deal-cta" target="_top">Continue to checkout →</a>
+    <div class="mark">negotiated via <b>Bouncr</b></div>
+  </div>
+
+  <div class="screen" id="walk-screen">
+    <div class="deal-price">🚪</div>
+    <div class="deal-line" id="walk-line">That's a wrap. No deal this time.</div>
+    <a class="deal-cta" id="walk-cta" target="_top">See standard pricing</a>
+    <div class="mark">negotiated via <b>Bouncr</b></div>
+  </div>
+
+  <noscript>
+    <div style="padding:24px">Negotiation needs JavaScript. <a class="fallback" id="ns-fallback" href="#">See standard pricing.</a></div>
+  </noscript>
+
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  const base = (q.get("base") || location.origin).replace(/\/$/, "");
+  const planId = q.get("plan") || "plan_demo";
+  const userRef = q.get("user") || ("anon_" + Math.random().toString(36).slice(2, 10));
+  const accent = q.get("accent");
+  const fallbackUrl = q.get("fallback") || "#";
+  if (accent) document.documentElement.style.setProperty("--accent", "#" + accent.replace(/^#/, ""));
+
+  const $ = (id) => document.getElementById(id);
+  const log = $("log"), chips = $("chips"), input = $("input"), form = $("form"), sendBtn = $("send");
+  $("walk-cta").href = fallbackUrl; $("deal-cta").href = "#";
+
+  let sessionId = q.get("session") || null;
+  let token = q.get("token") || null;
+  let expiresAt = 0;
+  let currentAsk = 0;
+  let busy = false;
+
+  const post = (path, body, headers) =>
+    fetch(base + path, {
+      method: "POST",
+      headers: Object.assign({ "content-type": "application/json" }, headers || {}),
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+  function notifyParent(type, payload) {
+    try { window.parent.postMessage({ source: "bouncr", type, payload }, "*"); } catch (_) {}
+  }
+
+  function addMsg(role, text) {
+    const el = document.createElement("div");
+    el.className = "msg " + (role === "user" ? "user" : "bot");
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
+
+  function typewriter(el, text) {
+    el.textContent = "";
+    let i = 0;
+    const step = () => {
+      el.textContent = text.slice(0, (i += 2));
+      log.scrollTop = log.scrollHeight;
+      if (i < text.length) setTimeout(step, 12);
+    };
+    step();
+  }
+
+  function showTyping() {
+    const el = document.createElement("div");
+    el.className = "typing"; el.id = "typing";
+    el.innerHTML = '<span class="dot">●</span><span class="dot">●</span><span class="dot">●</span>';
+    log.appendChild(el); log.scrollTop = log.scrollHeight;
+  }
+  function hideTyping() { const t = $("typing"); if (t) t.remove(); }
+
+  function renderChips(state, action) {
+    chips.innerHTML = "";
+    if (!state || state.status !== "open") return;
+    if (action && action.type === "counter") {
+      const take = document.createElement("button");
+      take.className = "chip primary";
+      take.textContent = "Take $" + state.current_ask + "/mo";
+      take.onclick = acceptCurrent;
+      const keep = document.createElement("button");
+      keep.className = "chip";
+      keep.textContent = "Keep haggling";
+      keep.onclick = () => input.focus();
+      chips.append(take, keep);
+    }
+  }
+
+  function setTimer() {
+    const t = $("timer");
+    if (!expiresAt) { t.textContent = ""; return; }
+    const tick = () => {
+      const ms = expiresAt - Date.now();
+      if (ms <= 0) { t.textContent = "expired"; return; }
+      const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+      t.textContent = h > 0 ? `${h}h ${m}m left` : `${m}m left`;
+    };
+    tick(); setInterval(tick, 30000);
+  }
+
+  function endInput() { input.disabled = true; sendBtn.disabled = true; chips.innerHTML = ""; }
+
+  function showDeal(price, line, checkoutUrl, dealId) {
+    endInput();
+    $("deal-price").innerHTML = "$" + price + "<small>/mo</small>";
+    $("deal-line").textContent = line || "You earned it.";
+    const cta = $("deal-cta");
+    if (checkoutUrl) cta.href = checkoutUrl; else cta.style.display = "none";
+    $("deal-screen").classList.add("show");
+    notifyParent("deal", { price, checkoutUrl, dealId });
+  }
+
+  function showWalk(line) {
+    endInput();
+    if (line) $("walk-line").textContent = line;
+    $("walk-screen").classList.add("show");
+    notifyParent("walkaway", {});
+  }
+
+  function handleReply(data) {
+    const el = addMsg("bot", "");
+    typewriter(el, data.reply);
+    if (data.state) { currentAsk = data.state.current_ask; }
+    if (data.is_final) { $("timer").classList.add("urgent"); }
+
+    if (data.action && data.action.type === "accept") {
+      setTimeout(() => showDeal(data.action.amount, data.reply, data.checkout_url, data.deal_id), 600);
+    } else if (data.action && data.action.type === "walk") {
+      setTimeout(() => showWalk(data.reply), 600);
+    } else {
+      renderChips(data.state, data.action);
+    }
+  }
+
+  async function streamMessage(text) {
+    showTyping();
+    const res = await post(`/v1/sessions/${sessionId}/messages/stream`, { message: text }, { "x-session-token": token });
+    if (!res.ok || !res.body) {
+      hideTyping();
+      addMsg("bot", "Hmm, something glitched. Try again.");
+      return;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let firstReply = true;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        let ev = "message", data = "";
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) ev = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (ev === "reply" && firstReply) {
+          firstReply = false; hideTyping();
+          handleReply(JSON.parse(data));
+        } else if (ev === "error") {
+          hideTyping();
+          addMsg("bot", "Couldn't process that — " + (JSON.parse(data).error || "error"));
+        }
+      }
+    }
+  }
+
+  async function acceptCurrent() {
+    if (busy) return; busy = true; chips.innerHTML = "";
+    try {
+      const res = await post(`/v1/sessions/${sessionId}/accept`, undefined, { "x-session-token": token });
+      const d = await res.json();
+      if (res.ok) showDeal(d.price, "Smart. Locked in.", d.checkout_url, d.deal_id);
+      else addMsg("bot", "Can't close that right now.");
+    } finally { busy = false; }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text || busy) return;
+    busy = true; input.value = ""; chips.innerHTML = "";
+    addMsg("user", text);
+    try { await streamMessage(text); } finally { busy = false; input.focus(); }
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+  });
+
+  async function init() {
+    try {
+      if (sessionId && token) {
+        // Server-mediated: session already created, just resume.
+        const v = await fetch(`${base}/v1/sessions/${sessionId}`, { headers: { "x-session-token": token } });
+        if (v.ok) { const s = await v.json(); expiresAt = s.expires_at; currentAsk = s.current_ask; }
+      } else {
+        const res = await post("/v1/sessions", { plan_id: planId, end_user_ref: userRef });
+        if (!res.ok) throw new Error("create failed " + res.status);
+        const s = await res.json();
+        sessionId = s.session_id; token = s.session_token; expiresAt = s.expires_at;
+        addMsg("bot", s.opener_message);
+      }
+      setTimer();
+      input.focus();
+    } catch (err) {
+      addMsg("bot", "Couldn't start the negotiation. " + (fallbackUrl !== "#" ? "See standard pricing." : ""));
+      console.error(err);
+    }
+  }
+  init();
+})();
+</script>
+</body>
+</html>
