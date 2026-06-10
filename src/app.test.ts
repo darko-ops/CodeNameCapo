@@ -153,12 +153,12 @@ describe("dashboard + analytics + Connect endpoints (Spec §7, §11, §12)", () 
     // one full negotiation so analytics has data
     const s = await startSession(app);
     await post(app, `/v1/sessions/${s.id}/messages`, { message: "$3" }, tok(s.token));
-    const close = await post(app, `/v1/sessions/${s.id}/messages`, { message: "$25" }, tok(s.token));
+    const close = await post(app, `/v1/sessions/${s.id}/messages`, { message: "$36" }, tok(s.token));
     expect((await close.json()).action.type).toBe("accept");
 
     const an = await (await app.request(`/v1/analytics/wtp?plan_id=${PLAN.id}`)).json();
     expect(an.funnel.sessions).toBe(1);
-    expect(an.offers.closingPrices).toEqual([25]);
+    expect(an.offers.closingPrices).toEqual([36]);
 
     const lint = await (await app.request(`/v1/plans/${PLAN.id}/lint`)).json();
     expect(lint.ok).toBe(true);

@@ -32,15 +32,18 @@ export function demoPlan(): Plan {
     version: 1,
     active: true,
     config: {
+      // Tuned for a fun, hagglable demo: opens high ($48), genuinely pushes back
+      // on offers below the $32 target, concedes in meaningful steps, and won't
+      // be talked below the $22 floor.
       listPrice: 30,
-      floorPrice: 8,
-      targetPrice: 22,
-      anchorMultiplier: 1.6,
+      floorPrice: 22,
+      targetPrice: 32,
+      anchorMultiplier: 1.6, // anchor = $48
       maxRounds: 6,
       maxDurationH: 48,
-      acceptThreshold: 0.97,
-      minConcession: 0.5,
-      lambda: 0.6,
+      acceptThreshold: 0.92,
+      minConcession: 1.0,
+      lambda: 0.55,
     },
     persona: { name: "Vinny", productName: "Obius", style: "sassy", roastLevel: 2 },
     policy: { cooldownHours: 72, maxMessages: 30 },
