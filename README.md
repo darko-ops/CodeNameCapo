@@ -1,6 +1,6 @@
 # Bouncr — Policy Engine
 
-[![Live demo](https://img.shields.io/badge/live%20demo-bouncr.tech-7C3AED?style=flat-square&logo=googlechrome&logoColor=white)](https://bouncr.tech)
+[![Live demo](https://img.shields.io/badge/live%20demo-demo.bouncr.tech-7C3AED?style=flat-square&logo=googlechrome&logoColor=white)](https://demo.bouncr.tech)
 
 The deterministic pricing core (Spec §4 / Appendix A). Pure functions, **zero runtime
 dependencies**. The LLM and the numbers never touch: the conversation layer extracts a
