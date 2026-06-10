@@ -33,12 +33,14 @@ function decisionLine(action: Action): string {
 
 function buildSystem(persona: Persona, action: Action, extraction: Extraction): string {
   const amt = permittedAmount(action);
+  const offer = extraction.offer_amount;
+  const roast = offer !== null ? ` You MAY quote their $${fmt(offer)} offer to roast or reject it` : "";
   const moneyTruth =
     amt === null
-      ? `- You have NO price to offer. Do not state, imply, or hint at any dollar amount.`
-      : `- The pricing desk has authorized you to state exactly: $${fmt(amt)}.
-- You have NO authority over prices. You cannot accept, imply, or hint at any other number.
-- Never output any dollar amount other than $${fmt(amt)}.`;
+      ? `- You have NO price to put on the table.${roast ? roast + ", but" : ""} do not state any other dollar amount.`
+      : `- The ONLY price you can put on the table is $${fmt(amt)}/mo. Always state it.
+-${roast ? roast + ", but the" : " The"} only number you actually OFFER is $${fmt(amt)} — never invent or hint at any other price you'd charge.
+- You have no authority over prices; a "pricing desk" sets them. That's your shield when pushed.`;
 
   const tacticHint = extraction.tactics.length
     ? `\nThe user just tried: ${extraction.tactics.join(", ")}. Call it out if it fits your style — users love being caught.`

@@ -75,13 +75,16 @@ export async function runTurn(ctx: TurnContext): Promise<TurnResult> {
 
   // 4 + 5. Render, then validate. Re-render once on failure, then fall back to
   //        the deterministic template (always Validator-safe).
+  // The persona may quote the user's own offer (to roast a lowball) — that's not
+  // a chargeable price, so allow it through validation.
+  const allowMentions = extraction.offer_amount !== null ? [extraction.offer_amount] : [];
   const rejections: string[] = [];
   let reply = "";
   let usedTemplate = false;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     reply = await render(client, persona, action, extraction, renderHistory);
-    const v = validate(reply, action);
+    const v = validate(reply, action, { allowMentions });
     if (v.ok) break;
     rejections.push(v.reason!);
     reply = "";

@@ -57,27 +57,37 @@ export function extractMentionedAmounts(text: string): number[] {
 
 const APPROX = 0.001;
 
+export interface ValidateOpts {
+  /**
+   * Numbers the reply MAY also mention besides the permitted amount — typically
+   * the user's own offer, so the persona can quote/roast it ("$30? cute — I can
+   * do $37.86"). These are never charged; only the engine's permitted amount is.
+   */
+  allowMentions?: number[];
+}
+
 /**
  * Validate a rendered reply against the engine's decision.
  * Returns ok:false with a reason when the reply must be re-rendered or replaced.
  */
-export function validate(reply: string, action: Action): ValidationResult {
+export function validate(reply: string, action: Action, opts: ValidateOpts = {}): ValidationResult {
   const permitted = permittedAmount(action);
+  const allow = new Set((opts.allowMentions ?? []).map((n) => round2(Math.max(n, 0))));
   const mentioned = extractMentionedAmounts(reply);
 
-  // (a) No number other than the permitted one may appear.
+  // (a) Every number must be either the permitted price or an explicitly-allowed
+  // mention (the user's own offer). Nothing else may appear.
   for (const amt of mentioned) {
-    if (permitted === null) {
-      return { ok: false, reason: `stated $${amt} on a ${action.type} (no price allowed)` };
-    }
-    if (Math.abs(amt - permitted) > APPROX) {
-      return { ok: false, reason: `stated $${amt}, permitted $${permitted}` };
-    }
+    if (permitted !== null && Math.abs(amt - permitted) <= APPROX) continue;
+    if (allow.has(round2(amt))) continue;
+    return permitted === null
+      ? { ok: false, reason: `stated $${amt} on a ${action.type} (no price allowed)` }
+      : { ok: false, reason: `stated $${amt}, permitted $${permitted}` };
   }
 
-  // (b) The permitted price must actually be present when there is one to state
-  // (an accept/counter/hold reply that omits the number is useless to the user).
-  if (permitted !== null && mentioned.length === 0) {
+  // (b) The permitted price must actually be present (a reply that omits the
+  // number — or only quotes the user's offer — is useless / misleading).
+  if (permitted !== null && !mentioned.some((a) => Math.abs(a - permitted) <= APPROX)) {
     return { ok: false, reason: `omitted the permitted price $${permitted}` };
   }
 

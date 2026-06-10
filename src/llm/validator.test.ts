@@ -56,6 +56,31 @@ describe("validate — number leakage (Spec §5.2a)", () => {
   });
 });
 
+describe("validate — quoting the user's offer (allowMentions)", () => {
+  const counter: Action = { type: "counter", amount: 37.86, isFinal: false };
+
+  it("allows the user's own offer to be quoted alongside the permitted price", () => {
+    const v = validate("$30? cute. I can do $37.86/mo — that's me moving.", counter, { allowMentions: [30] });
+    expect(v.ok).toBe(true);
+  });
+
+  it("still rejects a third, unexplained number even with the offer allowed", () => {
+    const v = validate("$30? no. But for $19/mo, sure.", counter, { allowMentions: [30] });
+    expect(v.ok).toBe(false);
+    expect(v.reason).toMatch(/\$19/);
+  });
+
+  it("still requires the permitted price to appear (can't only quote the user)", () => {
+    const v = validate("$30? in this economy? absolutely not.", counter, { allowMentions: [30] });
+    expect(v.ok).toBe(false);
+    expect(v.reason).toMatch(/omitted/);
+  });
+
+  it("without allowMentions, the user's number is still forbidden (default strict)", () => {
+    expect(validate("$30? I can do $37.86.", counter).ok).toBe(false);
+  });
+});
+
 describe("validate — acceptance language (Spec §5.2b)", () => {
   it("FAILS fabricated acceptance on a counter", () => {
     const a: Action = { type: "counter", amount: 18, isFinal: false };
