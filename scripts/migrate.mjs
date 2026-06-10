@@ -19,7 +19,8 @@ if (!url) {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const isLocal = /localhost|127\.0\.0\.1/.test(url);
-const sql = postgres(url, { ...(isLocal ? {} : { ssl: "require" }), max: 1 });
+// prepare:false for pooler compatibility (Supabase :6543 / Neon pooler).
+const sql = postgres(url, { ...(isLocal ? {} : { ssl: "require", prepare: false }), max: 1 });
 
 try {
   console.log(`applying schema.sql${isLocal ? "" : " (ssl)"} …`);

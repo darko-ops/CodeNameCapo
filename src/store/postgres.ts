@@ -39,9 +39,12 @@ export class PostgresStore implements Store {
   constructor(connectionString: string) {
     // Hosted Postgres (Neon/Supabase/Vercel PG) requires SSL; localhost doesn't.
     // Small pool — friendly to serverless where many instances each hold a pool.
+    // `prepare: false` for hosted connections so we're compatible with a
+    // transaction-mode pooler (Supabase :6543 / Neon pooler), which rejects the
+    // named prepared statements postgres.js uses by default.
     const isLocal = /localhost|127\.0\.0\.1/.test(connectionString);
     this.sql = postgres(connectionString, {
-      ...(isLocal ? {} : { ssl: "require" as const }),
+      ...(isLocal ? {} : { ssl: "require" as const, prepare: false }),
       max: isLocal ? 10 : 3,
       idle_timeout: 20,
     });
