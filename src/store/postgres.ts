@@ -37,7 +37,14 @@ export class PostgresStore implements Store {
   private readonly sql: Sql;
 
   constructor(connectionString: string) {
-    this.sql = postgres(connectionString);
+    // Hosted Postgres (Neon/Supabase/Vercel PG) requires SSL; localhost doesn't.
+    // Small pool — friendly to serverless where many instances each hold a pool.
+    const isLocal = /localhost|127\.0\.0\.1/.test(connectionString);
+    this.sql = postgres(connectionString, {
+      ...(isLocal ? {} : { ssl: "require" as const }),
+      max: isLocal ? 10 : 3,
+      idle_timeout: 20,
+    });
   }
 
   async close(): Promise<void> {
