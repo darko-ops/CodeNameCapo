@@ -73,8 +73,10 @@ export class PostgresStore implements Store {
     return { id: r.id, name: r.name, stripeConnectId: r.stripe_connect_id ?? null, createdAt: Number(r.created_at) };
   }
 
-  async getPlan(planId: string): Promise<Plan | null> {
-    const rows = await this.sql`select * from bouncr.plans where id = ${planId} and active = true limit 1`;
+  async getPlan(ref: string): Promise<Plan | null> {
+    // Resolve by internal id OR public plan_key (widgets use the friendly key).
+    const rows = await this.sql`
+      select * from bouncr.plans where (id = ${ref} or plan_key = ${ref}) and active = true limit 1`;
     const r = rows[0];
     if (!r) return null;
     return {

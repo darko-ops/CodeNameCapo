@@ -42,6 +42,15 @@ describe("createSession", () => {
     expect(turns[0]!.role).toBe("bouncer");
   });
 
+  it("resolves a plan by its public plan_key (what the widget sends), not just id", async () => {
+    const { service } = makeService();
+    // PLAN.id is "plan_demo"; PLAN.planKey is "pro_monthly" — both must work.
+    await expect(service.createSession({ planId: "pro_monthly", endUserRef: "u" })).resolves.toMatchObject({
+      sessionId: expect.any(String),
+    });
+    await expect(service.createSession({ planId: PLAN.id, endUserRef: "u" })).resolves.toBeTruthy();
+  });
+
   it("rejects an unknown plan", async () => {
     const { service } = makeService();
     await expect(service.createSession({ planId: "nope", endUserRef: "u" })).rejects.toMatchObject({
