@@ -1,11 +1,14 @@
 /**
  * Postgres Store (Spec §8) — the deployment path. Mirrors MemoryStore exactly;
- * schema in db/schema.sql. Uses postgres.js.
+ * schema in db/schema.sql. Uses postgres.js. Smoke-tested end-to-end against
+ * Postgres 16.
  *
- * NOTE: this implementation is structurally complete and type-checked, but it
- * has not been exercised against a live database in this repo (the tests run on
- * MemoryStore). Validate against a real Postgres/Supabase before shipping —
- * `psql "$DATABASE_URL" -f db/schema.sql` then point BOUNCR at DATABASE_URL.
+ * All tables live in a dedicated `bouncr` schema and are explicitly schema-
+ * qualified in every query — so Bouncr is isolated from anything else in the
+ * same database (e.g. Dromo's `public` tables) AND it works through a
+ * transaction-mode pooler, where a session-level `search_path` wouldn't stick.
+ *
+ * Apply the schema with `npm run migrate` (db/schema.sql + db/seed.sql).
  */
 import postgres from "postgres";
 import type {
@@ -55,7 +58,7 @@ export class PostgresStore implements Store {
   }
 
   async getMerchant(id: string): Promise<Merchant | null> {
-    const rows = await this.sql`select * from merchants where id = ${id} limit 1`;
+    const rows = await this.sql`select * from bouncr.merchants where id = ${id} limit 1`;
     const r = rows[0];
     if (!r) return null;
     return { id: r.id, name: r.name, stripeConnectId: r.stripe_connect_id ?? null, createdAt: Number(r.created_at) };
@@ -63,7 +66,7 @@ export class PostgresStore implements Store {
 
   async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId">>): Promise<Merchant> {
     const rows = await this.sql`
-      update merchants set stripe_connect_id = coalesce(${patch.stripeConnectId ?? null}, stripe_connect_id)
+      update bouncr.merchants set stripe_connect_id = coalesce(${patch.stripeConnectId ?? null}, stripe_connect_id)
       where id = ${id} returning *`;
     if (!rows[0]) throw new Error(`merchant ${id} not found`);
     const r = rows[0];
@@ -71,7 +74,7 @@ export class PostgresStore implements Store {
   }
 
   async getPlan(planId: string): Promise<Plan | null> {
-    const rows = await this.sql`select * from plans where id = ${planId} and active = true limit 1`;
+    const rows = await this.sql`select * from bouncr.plans where id = ${planId} and active = true limit 1`;
     const r = rows[0];
     if (!r) return null;
     return {
@@ -91,7 +94,7 @@ export class PostgresStore implements Store {
   async createSession(rec: NewSession): Promise<SessionRecord> {
     const now = Date.now();
     const rows = await this.sql`
-      insert into sessions
+      insert into bouncr.sessions
         (plan_id, session_token, end_user_ref, channel, round, current_ask, opened_at, expires_at,
          status, config_version, context, kind, reneg_deal_id, config_override, created_at)
       values
@@ -104,13 +107,13 @@ export class PostgresStore implements Store {
   }
 
   async getSession(id: string): Promise<SessionRecord | null> {
-    const rows = await this.sql`select * from sessions where id = ${id} limit 1`;
+    const rows = await this.sql`select * from bouncr.sessions where id = ${id} limit 1`;
     return rows[0] ? this.toSession(rows[0]) : null;
   }
 
   async updateSession(id: string, patch: SessionPatch): Promise<SessionRecord> {
     const rows = await this.sql`
-      update sessions set
+      update bouncr.sessions set
         round = coalesce(${patch.round ?? null}, round),
         current_ask = coalesce(${patch.currentAsk ?? null}, current_ask),
         status = coalesce(${patch.status ?? null}, status)
@@ -123,7 +126,7 @@ export class PostgresStore implements Store {
   async addTurn(rec: NewTurn): Promise<TurnRecord> {
     const now = Date.now();
     const rows = await this.sql`
-      insert into turns (session_id, role, raw_text, extracted, action, created_at)
+      insert into bouncr.turns (session_id, role, raw_text, extracted, action, created_at)
       values (${rec.sessionId}, ${rec.role}, ${rec.rawText},
               ${rec.extracted ? this.sql.json(rec.extracted) : null},
               ${rec.action ? this.sql.json(rec.action) : null}, ${now})
@@ -133,33 +136,33 @@ export class PostgresStore implements Store {
 
   async listTurns(sessionId: string): Promise<TurnRecord[]> {
     const rows = await this.sql`
-      select * from turns where session_id = ${sessionId} order by created_at asc`;
+      select * from bouncr.turns where session_id = ${sessionId} order by created_at asc`;
     return rows.map((r) => this.toTurn(r));
   }
 
   async listSessionsByPlan(planId: string): Promise<SessionRecord[]> {
     const rows = await this.sql`
-      select * from sessions where plan_id = ${planId} order by created_at desc`;
+      select * from bouncr.sessions where plan_id = ${planId} order by created_at desc`;
     return rows.map((r) => this.toSession(r));
   }
 
   async listTurnsByPlan(planId: string): Promise<TurnRecord[]> {
     const rows = await this.sql`
-      select t.* from turns t join sessions s on s.id = t.session_id
+      select t.* from bouncr.turns t join bouncr.sessions s on s.id = t.session_id
       where s.plan_id = ${planId} order by t.created_at asc`;
     return rows.map((r) => this.toTurn(r));
   }
 
   async listDealsByPlan(planId: string): Promise<DealRecord[]> {
     const rows = await this.sql`
-      select * from deals where plan_id = ${planId} order by created_at desc`;
+      select * from bouncr.deals where plan_id = ${planId} order by created_at desc`;
     return rows.map((r) => this.toDeal(r));
   }
 
   async createDeal(rec: NewDeal): Promise<DealRecord> {
     const now = Date.now();
     const rows = await this.sql`
-      insert into deals
+      insert into bouncr.deals
         (session_id, merchant_id, plan_id, end_user_ref, price, currency, status, kind,
          stripe_checkout_id, stripe_subscription_id, reneg_session_id, created_at, settled_at)
       values
@@ -171,12 +174,12 @@ export class PostgresStore implements Store {
   }
 
   async getDeal(id: string): Promise<DealRecord | null> {
-    const rows = await this.sql`select * from deals where id = ${id} limit 1`;
+    const rows = await this.sql`select * from bouncr.deals where id = ${id} limit 1`;
     return rows[0] ? this.toDeal(rows[0]) : null;
   }
 
   async getDealByCheckoutId(checkoutId: string): Promise<DealRecord | null> {
-    const rows = await this.sql`select * from deals where stripe_checkout_id = ${checkoutId} limit 1`;
+    const rows = await this.sql`select * from bouncr.deals where stripe_checkout_id = ${checkoutId} limit 1`;
     return rows[0] ? this.toDeal(rows[0]) : null;
   }
 
@@ -185,7 +188,7 @@ export class PostgresStore implements Store {
     // sentinel to distinguish "set to null" from "leave unchanged".
     const clearReneg = patch.renegSessionId === null;
     const rows = await this.sql`
-      update deals set
+      update bouncr.deals set
         status = coalesce(${patch.status ?? null}, status),
         price = coalesce(${patch.price ?? null}, price),
         stripe_checkout_id = coalesce(${patch.stripeCheckoutId ?? null}, stripe_checkout_id),
@@ -201,33 +204,33 @@ export class PostgresStore implements Store {
   async addUsageCycle(rec: NewUsageCycle): Promise<UsageCycle> {
     const now = Date.now();
     const rows = await this.sql`
-      insert into usage_cycles (deal_id, cycle_index, usage_value, band_ceiling, breach, breach_streak, created_at)
+      insert into bouncr.usage_cycles (deal_id, cycle_index, usage_value, band_ceiling, breach, breach_streak, created_at)
       values (${rec.dealId}, ${rec.cycleIndex}, ${rec.usageValue}, ${rec.bandCeiling}, ${rec.breach}, ${rec.breachStreak}, ${now})
       returning *`;
     return this.toUsage(rows[0]!);
   }
 
   async listUsageCycles(dealId: string): Promise<UsageCycle[]> {
-    const rows = await this.sql`select * from usage_cycles where deal_id = ${dealId} order by cycle_index asc`;
+    const rows = await this.sql`select * from bouncr.usage_cycles where deal_id = ${dealId} order by cycle_index asc`;
     return rows.map((r) => this.toUsage(r));
   }
 
   async appendEvent(type: string, payload: Record<string, unknown>): Promise<void> {
     await this.sql`
-      insert into events (type, payload, created_at)
+      insert into bouncr.events (type, payload, created_at)
       values (${type}, ${this.sql.json(payload as any)}, ${Date.now()})`;
   }
 
   async setCooldown(planId: string, endUserRef: string, until: number): Promise<void> {
     await this.sql`
-      insert into cooldowns (plan_id, end_user_ref, until_ms)
+      insert into bouncr.cooldowns (plan_id, end_user_ref, until_ms)
       values (${planId}, ${endUserRef}, ${until})
       on conflict (plan_id, end_user_ref) do update set until_ms = excluded.until_ms`;
   }
 
   async getCooldown(planId: string, endUserRef: string): Promise<number | null> {
     const rows = await this.sql`
-      select until_ms from cooldowns where plan_id = ${planId} and end_user_ref = ${endUserRef} limit 1`;
+      select until_ms from bouncr.cooldowns where plan_id = ${planId} and end_user_ref = ${endUserRef} limit 1`;
     return rows[0] ? Number(rows[0].until_ms) : null;
   }
 

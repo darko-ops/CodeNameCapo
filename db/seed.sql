@@ -1,11 +1,12 @@
 -- Demo merchant + plan, mirroring src/config.ts (demoMerchant / demoPlan).
--- Idempotent: safe to re-run. Apply after db/schema.sql.
+-- Idempotent: safe to re-run. Apply after db/schema.sql. Lives in the `bouncr`
+-- schema, isolated from anything else in the project.
 
-insert into merchants (id, name, stripe_connect_id, created_at)
+insert into bouncr.merchants (id, name, stripe_connect_id, created_at)
 values ('merchant_demo', 'Obius', null, 0)
 on conflict (id) do nothing;
 
-insert into plans (id, merchant_id, plan_key, currency, config_jsonb, persona_jsonb, policy_jsonb, usage_jsonb, version, active)
+insert into bouncr.plans (id, merchant_id, plan_key, currency, config_jsonb, persona_jsonb, policy_jsonb, usage_jsonb, version, active)
 values (
   'plan_demo',
   'merchant_demo',

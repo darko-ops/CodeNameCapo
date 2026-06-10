@@ -27,9 +27,9 @@ try {
   await sql.unsafe(readFileSync(join(root, "db", "schema.sql"), "utf8"));
   console.log("applying seed.sql …");
   await sql.unsafe(readFileSync(join(root, "db", "seed.sql"), "utf8"));
-  const [{ count: plans }] = await sql`select count(*)::int as count from plans`;
-  const [{ count: merchants }] = await sql`select count(*)::int as count from merchants`;
-  console.log(`done — ${plans} plan(s), ${merchants} merchant(s).`);
+  const [{ count: plans }] = await sql`select count(*)::int as count from bouncr.plans`;
+  const [{ count: merchants }] = await sql`select count(*)::int as count from bouncr.merchants`;
+  console.log(`done — ${plans} plan(s), ${merchants} merchant(s) in schema "bouncr".`);
 } catch (err) {
   console.error("migration failed:", err.message);
   process.exitCode = 1;
