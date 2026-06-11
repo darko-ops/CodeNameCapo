@@ -147,6 +147,47 @@ describe("embeddable widget assets (Spec §10)", () => {
   });
 });
 
+describe("invisible rate limiting", () => {
+  it("throttles a message burst with an in-character reply, never an error", async () => {
+    const { app } = makeApp();
+    const { id, token } = await startSession(app);
+    let throttled = 0;
+    let realTurns = 0;
+    // Hammer past the burst rule (6 / 3s). The widget itself can never do this
+    // (it blocks sending until each reply lands) — only a script can.
+    for (let i = 0; i < 12; i++) {
+      const r = await post(app, `/v1/sessions/${id}/messages`, { message: "$5" }, tok(token));
+      expect([200, 409]).toContain(r.status); // invisible: a throttle is 200, never 429/5xx
+      if (r.status === 200) {
+        const b = await r.json();
+        if (b.state === null) throttled++; // throttled turns carry no engine state
+        else realTurns++;
+      }
+    }
+    expect(realTurns).toBeGreaterThan(0); // the first few got through
+    expect(throttled).toBeGreaterThan(0); // the burst got canned, in-character replies
+  });
+
+  it("caps session creation per IP on the keyless demo", async () => {
+    const { app } = makeApp(); // apiKey null => public demo
+    let blocked = 0;
+    for (let i = 0; i < 20; i++) {
+      const r = await post(app, "/v1/sessions", { plan_id: PLAN.id, end_user_ref: "u" });
+      if (r.status === 429) blocked++;
+    }
+    expect(blocked).toBeGreaterThan(0); // 15 sessions / 10 min ceiling kicks in
+  });
+
+  it("does NOT IP-cap session creation when a merchant key guards the route", async () => {
+    const { app } = makeApp("secret_key"); // keyed deployment = trusted server
+    const h = { "x-api-key": "secret_key" };
+    for (let i = 0; i < 20; i++) {
+      const r = await post(app, "/v1/sessions", { plan_id: PLAN.id, end_user_ref: "u" }, h);
+      expect(r.status).toBe(201); // a merchant server creating from one IP is never throttled
+    }
+  });
+});
+
 describe("landing page host routing (thebouncr.com)", () => {
   it("serves the landing on thebouncr.com and the playground elsewhere", async () => {
     const { app } = makeApp();

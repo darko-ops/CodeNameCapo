@@ -200,9 +200,12 @@
     if (!expiresAt) { t.textContent = ""; return; }
     const tick = () => {
       const ms = expiresAt - Date.now();
+      // A multi-hour countdown is just noise — keep the header clean and only
+      // surface the clock in the final hour, where it's a real urgency cue.
       if (ms <= 0) { t.textContent = "expired"; return; }
-      const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
-      t.textContent = h > 0 ? `${h}h ${m}m left` : `${m}m left`;
+      if (ms > 3600000) { t.textContent = ""; return; }
+      const m = Math.floor(ms / 60000);
+      t.textContent = `${m}m left`;
     };
     tick(); setInterval(tick, 30000);
   }

@@ -21,6 +21,7 @@ import { Hono, type Context, type Next } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { StripeGateway } from "./stripe/gateway.js";
 import { BouncrService, ServiceError } from "./service.js";
+import { RateLimiter, type RateRule } from "./ratelimit.js";
 import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML } from "./widget/assets.js";
 
 export interface AppDeps {
@@ -37,9 +38,30 @@ const STATUS: Record<ServiceError["code"], 400 | 401 | 404 | 409> = {
   conflict: 409,
 };
 
+// Invisible rate limits, keyed by client IP. Generous for a human haggling
+// (the widget blocks sending until each reply lands, so a real user can't even
+// approach these), tight for a script hammering the LLM endpoints.
+const MSG_RULES: readonly RateRule[] = [
+  { windowMs: 3_000, max: 6 }, // no rapid-fire (anti-bot burst)
+  { windowMs: 60_000, max: 30 }, // sustained per-minute ceiling
+];
+const SESSION_RULE: RateRule = { windowMs: 600_000, max: 15 }; // new sessions / IP / 10 min (public demo only)
+
+// In-character throttle lines — shown instead of a 429 so it reads as the
+// bouncer talking, not an error. No LLM call is made, so a throttled turn is free.
+const THROTTLE_LINES = [
+  "ok ok slow down, im only one guy here 😤 gimme a sec",
+  "easy speed racer — one at a time",
+  "yo chill, i cant keep up if u spam me like that",
+  "one message at a time champ, im not a vending machine",
+];
+
 export function buildApp(deps: AppDeps): Hono {
   const app = new Hono();
   const { service, stripe } = deps;
+  const limiter = new RateLimiter();
+  let throttleIdx = 0;
+  const throttleReply = () => THROTTLE_LINES[throttleIdx++ % THROTTLE_LINES.length]!;
 
   app.get("/healthz", (c) => c.json({ ok: true }));
 
@@ -52,6 +74,12 @@ export function buildApp(deps: AppDeps): Hono {
     const planId = str(body.plan_id);
     const endUserRef = str(body.end_user_ref);
     if (!planId || !endUserRef) return c.json({ error: "plan_id and end_user_ref are required" }, 400);
+    // Cap session spin-up per IP on the public (keyless) demo. A merchant server
+    // creates sessions with its API key from one IP — never IP-limit that, so we
+    // only throttle when no merchant key is configured.
+    if (deps.apiKey === null && !limiter.hitAll(clientIp(c), [SESSION_RULE])) {
+      return c.json({ error: "too many sessions, try again shortly", code: "conflict", retry_at: Date.now() + 60_000 }, 429);
+    }
     const r = await service.createSession({
       planId,
       endUserRef,
@@ -170,6 +198,9 @@ export function buildApp(deps: AppDeps): Hono {
   app.post("/v1/sessions/:id/messages", sessionAuth, async (c) => {
     const message = str((await safeJson(c)).message);
     if (!message) return c.json({ error: "message is required" }, 400);
+    // Invisible throttle: short-circuit BEFORE the (paid) LLM turn with a canned
+    // in-character reply. Looks like the bouncer talking, costs nothing.
+    if (!limiter.hitAll(clientIp(c), MSG_RULES)) return c.json(cannedTurn(throttleReply()));
     const r = await service.postMessage(c.req.param("id")!, message);
     return c.json(turnJson(r));
   });
@@ -177,9 +208,17 @@ export function buildApp(deps: AppDeps): Hono {
   app.post("/v1/sessions/:id/messages/stream", sessionAuth, async (c) => {
     const message = str((await safeJson(c)).message);
     const id = c.req.param("id")!;
+    const ip = clientIp(c);
     return streamSSE(c, async (stream) => {
       if (!message) {
         await stream.writeSSE({ event: "error", data: JSON.stringify({ error: "message is required" }) });
+        return;
+      }
+      // Invisible throttle: emit a canned in-character reply over SSE, before the
+      // (paid) LLM turn. The widget renders it like any other bouncer message.
+      if (!limiter.hitAll(ip, MSG_RULES)) {
+        await stream.writeSSE({ event: "typing", data: "1" });
+        await stream.writeSSE({ event: "reply", data: JSON.stringify(cannedTurn(throttleReply())) });
         return;
       }
       // Typing indicator first — the haggle should feel like texting; dead air is
@@ -265,6 +304,22 @@ function turnJson(r: import("./service.js").TurnResponse) {
     is_final: r.isFinal,
     ...(r.checkoutUrl ? { checkout_url: r.checkoutUrl, deal_id: r.dealId } : {}),
   };
+}
+
+/**
+ * A throttled turn, shaped like a normal reply so the widget renders it as a
+ * bouncer message. `state: null` means the engine never ran (no round advanced,
+ * no chips, no close) — it's purely a "slow down" line, never a real concession.
+ */
+function cannedTurn(reply: string) {
+  return { reply, state: null, action: null, is_final: false };
+}
+
+/** Best-effort client IP for rate limiting (Vercel sets x-forwarded-for). */
+function clientIp(c: Context): string {
+  const xff = c.req.header("x-forwarded-for");
+  if (xff) return xff.split(",")[0]!.trim();
+  return c.req.header("x-real-ip") ?? c.req.header("cf-connecting-ip") ?? "local";
 }
 
 // --- guards & helpers ------------------------------------------------------
