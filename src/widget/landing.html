@@ -125,6 +125,12 @@
   /* sections */
   .band { padding: 84px 0; }
   .kicker { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent2); margin-bottom: 14px; }
+
+  /* wide manifesto statement near the bottom */
+  .statement { padding: 120px 0; text-align: center; border-top: 1px solid var(--line); position: relative; overflow: hidden; }
+  .statement::before { content: ""; position: absolute; inset: 0; background: radial-gradient(closest-side at 50% 50%, rgba(124,58,237,0.16), transparent 72%); pointer-events: none; }
+  .statement p { position: relative; font-size: clamp(30px, 5.2vw, 58px); line-height: 1.08; letter-spacing: -1.5px; font-weight: 700; max-width: 17em; margin: 0 auto; }
+  .statement em { font-style: normal; background: linear-gradient(120deg, var(--accent), var(--hi)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   h2 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -1px; margin: 0 0 16px; font-weight: 700; }
   .band p.sub { color: var(--muted); font-size: 17px; max-width: 38em; margin: 0 0 36px; }
 
@@ -337,6 +343,12 @@
     </div>
 
     <p class="note" style="font-size:13px; color:var(--muted)">Claude Desktop: add it as a custom connector (Settings → Connectors) pointing at the same URL. Any MCP-capable client works — it's a standard Streamable HTTP server.</p>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+    <p>Changing the way people deal with <em>ridiculous</em> subscription prices.</p>
   </div>
 </section>
 
