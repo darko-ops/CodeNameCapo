@@ -32,9 +32,10 @@
   button:disabled { opacity:.55; cursor:default; }
   .ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
   .err { color:var(--err); font-size:13.5px; margin-top:12px; min-height:1em; }
-  .keybox, .snip { margin-top:16px; background:#0d0d13; border:1px solid var(--line); border-radius:11px; padding:14px; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:13px; word-break:break-all; position:relative; }
+  .keybox, .snip { margin-top:16px; background:#0d0d13; border:1px solid var(--line); border-radius:11px; padding:14px; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:13px; }
   .keybox { border-color:rgba(124,58,237,.4); }
-  .copy { position:absolute; top:8px; right:8px; padding:5px 10px; font-size:12px; margin:0; }
+  .keyval { word-break:break-all; line-height:1.55; }
+  .copy { margin:12px 0 0; padding:5px 14px; font-size:12px; }
   .warn { font-size:12.5px; color:var(--accent2); margin-top:8px; }
   .hidden { display:none; }
   .foot { margin-top:18px; font-size:13px; color:var(--muted); }
@@ -77,7 +78,7 @@
     <h1>Save your API key</h1>
     <p class="sub">This is your dashboard login. We only store a hash — you won't see it again.</p>
     <div class="card">
-      <div class="keybox" id="key-box"><button class="copy ghost" data-copy="key-box">Copy</button><span id="key-val"></span></div>
+      <div class="keybox" id="key-box"><div class="keyval" id="key-val"></div><button class="copy ghost" data-copy="key-box">Copy</button></div>
       <div class="warn">⚠ Store this somewhere safe (a password manager). It's shown once.</div>
       <button id="key-continue">I saved it — continue →</button>
     </div>
@@ -105,22 +106,14 @@
             <input id="target" type="number" min="1" step="0.01" placeholder="= list" />
           </div>
         </div>
-        <div class="hint">The bouncer opens above list, aims at target, and will never close below your floor.</div>
-        <div class="row">
-          <div>
-            <label for="persona">Bouncer name</label>
-            <input id="persona" placeholder="Vini" />
-          </div>
-          <div>
-            <label for="style">Personality</label>
-            <select id="style">
-              <option value="sassy">Sassy</option>
-              <option value="playful">Playful</option>
-              <option value="deadpan">Deadpan</option>
-              <option value="professional">Professional</option>
-            </select>
-          </div>
-        </div>
+        <div class="hint">Vini opens at your list price, negotiates toward your target, and never closes below your floor.</div>
+        <label for="style">Vini's personality</label>
+        <select id="style">
+          <option value="sassy">Sassy</option>
+          <option value="playful">Playful</option>
+          <option value="deadpan">Deadpan</option>
+          <option value="professional">Professional</option>
+        </select>
         <div class="err" id="plan-err"></div>
         <button id="plan-btn" type="submit">Create plan →</button>
       </form>
@@ -132,7 +125,7 @@
     <h1>Drop it on your pricing page</h1>
     <p class="sub">One tag mounts your bouncer wherever this element is.</p>
     <div class="card">
-      <div class="snip" id="snip-box"><button class="copy ghost" data-copy="snip-box">Copy</button><span id="snip-val"></span></div>
+      <div class="snip" id="snip-box"><div class="keyval" id="snip-val"></div><button class="copy ghost" data-copy="snip-box">Copy</button></div>
       <p class="hint" style="margin-top:12px">Add a target element too: <code>&lt;div id="bouncr"&gt;&lt;/div&gt;</code></p>
       <div id="preview"></div>
       <button id="to-dashboard">Open your dashboard →</button>
@@ -195,7 +188,6 @@
         product_name: $("product").value.trim(),
         list_price: numv("list"),
         floor_price: numv("floor"),
-        persona_name: $("persona").value.trim() || undefined,
         persona_style: $("style").value,
       };
       const tv = numv("target"); if (tv !== null) body.target_price = tv;

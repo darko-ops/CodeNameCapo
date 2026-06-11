@@ -112,8 +112,7 @@
     <form id="edit-form" style="margin-top:14px">
       <div class="erow">
         <div><label>Product name</label><input id="e-product" /></div>
-        <div><label>Bouncer name</label><input id="e-persona" /></div>
-        <div><label>Personality</label>
+        <div><label>Vini's personality</label>
           <select id="e-style"><option value="sassy">Sassy</option><option value="playful">Playful</option><option value="deadpan">Deadpan</option><option value="professional">Professional</option></select>
         </div>
       </div>
@@ -259,7 +258,6 @@
     const p = PLANS.find((x) => x.id === id);
     if (!p) return;
     $("e-product").value = (p.persona && p.persona.product_name) || "";
-    $("e-persona").value = (p.persona && p.persona.name) || "";
     $("e-style").value = (p.persona && p.persona.style) || "sassy";
     $("e-list").value = p.list_price;
     $("e-floor").value = p.floor_price;
@@ -300,7 +298,6 @@
     const feeRaw = $("e-fee").value.trim();
     const body = {
       product_name: $("e-product").value.trim(),
-      persona_name: $("e-persona").value.trim(),
       persona_style: $("e-style").value,
       list_price: numv("e-list"),
       floor_price: numv("e-floor"),

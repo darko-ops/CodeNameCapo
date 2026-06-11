@@ -273,8 +273,8 @@ describe("merchant signup / onboarding (Spec §9)", () => {
     expect(plan.id).toMatch(/^plan_/);
     expect(plan.list_price).toBe(40);
     expect(plan.floor_price).toBe(25);
-    expect(plan.target_price).toBe(40); // defaults to list
-    expect(plan.persona.name).toBe("Sal");
+    expect(plan.target_price).toBe(32.5); // defaults to the floor↔list midpoint
+    expect(plan.persona.name).toBe("Vini"); // always Vini — persona_name is ignored
     expect(embed.snippet).toContain(`data-plan="${plan.id}"`);
 
     // 4. It now shows in the merchant's plans, scoped to them.
@@ -301,7 +301,7 @@ describe("merchant signup / onboarding (Spec §9)", () => {
     const updated = (await ok.json()).plan;
     expect(updated.list_price).toBe(45);
     expect(updated.floor_price).toBe(28);
-    expect(updated.persona.name).toBe("Tony");
+    expect(updated.persona.name).toBe("Vini"); // name is fixed — persona_name ignored
     expect(updated.application_fee_percent).toBe(12);
     expect(updated.version).toBe(2); // bumped from 1
 

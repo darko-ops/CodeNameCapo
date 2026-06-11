@@ -139,7 +139,6 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
       floorPrice: num(b.floor_price) ?? NaN,
       ...(num(b.target_price) !== null ? { targetPrice: num(b.target_price)! } : {}),
       ...(str(b.currency) ? { currency: str(b.currency)! } : {}),
-      ...(str(b.persona_name) ? { personaName: str(b.persona_name)! } : {}),
       ...(personaStyle(b.persona_style) ? { personaStyle: personaStyle(b.persona_style)! } : {}),
     });
     return c.json({ plan: planJson(plan), embed: embedInfo(baseFromReq(c), plan.id) }, 201);
@@ -157,7 +156,6 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
       ...(num(b.list_price) !== null ? { listPrice: num(b.list_price)! } : {}),
       ...(num(b.floor_price) !== null ? { floorPrice: num(b.floor_price)! } : {}),
       ...(num(b.target_price) !== null ? { targetPrice: num(b.target_price)! } : {}),
-      ...(str(b.persona_name) ? { personaName: str(b.persona_name)! } : {}),
       ...(personaStyle(b.persona_style) ? { personaStyle: personaStyle(b.persona_style)! } : {}),
       // application_fee_percent: number sets an override, null clears it (use platform default)
       ...("application_fee_percent" in b

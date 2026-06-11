@@ -220,7 +220,6 @@ export class BouncrService {
       floorPrice: number;
       targetPrice?: number;
       currency?: string;
-      personaName?: string;
       personaStyle?: Persona["style"];
     },
   ): Promise<Plan> {
@@ -231,18 +230,22 @@ export class BouncrService {
     if (listPrice === null || floorPrice === null) {
       throw new ServiceError("bad_request", "listPrice and floorPrice are required numbers");
     }
-    // Aim at the list price by default; anchor opens 1.6× above it.
-    const targetPrice = input.targetPrice != null ? num(input.targetPrice)! : listPrice;
+    // The bouncer OPENS at the merchant's list price (anchor = list) and
+    // negotiates down toward a target, never below the floor. So the demo
+    // reflects exactly the price the merchant set. Target defaults to the
+    // midpoint between floor and list.
+    const targetPrice =
+      input.targetPrice != null ? num(input.targetPrice)! : round2((listPrice + floorPrice) / 2);
 
     const config: Config = {
       listPrice,
       floorPrice,
       targetPrice,
-      anchorMultiplier: 1.6,
+      anchorMultiplier: 1, // anchor = list price
       maxRounds: 6,
       maxDurationH: 48,
       acceptThreshold: 0.92,
-      minConcession: Math.max(1, round2((targetPrice - floorPrice) * 0.08)),
+      minConcession: Math.max(1, round2((listPrice - floorPrice) * 0.12)),
       lambda: 0.55,
     };
     const policy = { cooldownHours: 72, maxMessages: 30 };
@@ -257,7 +260,7 @@ export class BouncrService {
       currency: (input.currency ?? "usd").toLowerCase(),
       config,
       persona: {
-        name: input.personaName?.trim() || "Vini",
+        name: "Vini", // the bouncer is always Vini — not user-changeable
         productName,
         style: input.personaStyle ?? "sassy",
         roastLevel: 2,
@@ -293,7 +296,6 @@ export class BouncrService {
       floorPrice?: number;
       targetPrice?: number;
       currency?: string;
-      personaName?: string;
       personaStyle?: Persona["style"];
       applicationFeePercent?: number | null;
       active?: boolean;
@@ -316,9 +318,8 @@ export class BouncrService {
     const lint = lintConfig(config, plan.policy);
     if (!lint.ok) throw new ServiceError("bad_request", `plan config invalid: ${lint.errors.join("; ")}`);
 
-    const persona: Persona = { ...plan.persona };
+    const persona: Persona = { ...plan.persona, name: "Vini" }; // always Vini
     if (input.productName?.trim()) persona.productName = input.productName.trim();
-    if (input.personaName?.trim()) persona.name = input.personaName.trim();
     if (input.personaStyle) persona.style = input.personaStyle;
 
     const fee =
