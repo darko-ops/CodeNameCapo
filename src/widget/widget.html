@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Bouncr</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDEwMCAxMDAiIHJvbGU9ImltZyIgYXJpYS1sYWJlbD0iVGhlQm91bmNyIj4KICA8cmVjdCB4PSI2IiB5PSI2IiB3aWR0aD0iODgiIGhlaWdodD0iODgiIHJ4PSIyNCIgZmlsbD0iIzdDM0FFRCIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iMzQiIHI9IjExIiBmaWxsPSIjMEIwQjEyIi8+CiAgPHBhdGggZD0iTTI2IDY1IEw3NCA1MyIgc3Ryb2tlPSIjMEIwQjEyIiBzdHJva2Utd2lkdGg9IjEyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIGZpbGw9Im5vbmUiLz4KICA8cGF0aCBkPSJNMjYgNTMgTDc0IDY1IiBzdHJva2U9IiMwQjBCMTIiIHN0cm9rZS13aWR0aD0iMTIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgZmlsbD0ibm9uZSIvPgo8L3N2Zz4K" />
 <style>
   :root {
     --accent: #7C3AED;     /* electric violet — the persona color */
@@ -82,6 +83,8 @@
   #deal-screen .deal-price { color: var(--mint); text-shadow: 0 0 46px rgba(52,211,153,.5); animation: dealpop .5s cubic-bezier(.2,.9,.3,1.2); }
   #deal-screen .deal-cta { background: var(--mint); color: #04241a; }
   @keyframes dealpop { 0% { transform: scale(.82); opacity: 0 } 60% { transform: scale(1.06) } 100% { transform: scale(1); opacity: 1 } }
+  #deal-screen .deal-emblem { color: var(--mint); width: 54px; height: 54px; display: block; filter: drop-shadow(0 0 22px rgba(52,211,153,.5)); animation: dealpop .5s cubic-bezier(.2,.9,.3,1.2); }
+  #deal-screen .deal-emblem svg { width: 100%; height: 100%; display: block; }
   .mark { position: absolute; bottom: 14px; font-size: 11px; color: var(--muted); letter-spacing: .3px; }
   .mark b { color: var(--accent); }
   a.fallback { color: var(--accent); }
@@ -103,6 +106,7 @@
   </form>
 
   <div class="screen" id="deal-screen">
+    <span class="deal-emblem"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="30" r="10" fill="currentColor"/><path d="M27 62 L73 51" stroke="currentColor" stroke-width="11" stroke-linecap="round" fill="none"/><path d="M27 51 L73 62" stroke="currentColor" stroke-width="11" stroke-linecap="round" fill="none"/></svg></span>
     <div class="deal-price" id="deal-price"></div>
     <div class="deal-line" id="deal-line"></div>
     <a class="deal-cta" id="deal-cta" target="_top">Continue to checkout →</a>

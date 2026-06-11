@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 100 100" role="img" aria-label="TheBouncr">
+  <rect x="6" y="6" width="88" height="88" rx="24" fill="#7C3AED"/>
+  <circle cx="50" cy="34" r="11" fill="#0B0B12"/>
+  <path d="M26 65 L74 53" stroke="#0B0B12" stroke-width="12" stroke-linecap="round" fill="none"/>
+  <path d="M26 53 L74 65" stroke="#0B0B12" stroke-width="12" stroke-linecap="round" fill="none"/>
+</svg>

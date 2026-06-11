@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="96" viewBox="0 0 360 96" role="img" aria-label="TheBouncr">
+  <g transform="translate(8,16)">
+    <rect x="0" y="0" width="64" height="64" rx="18" fill="#7C3AED"/>
+    <g transform="translate(7.5,7.5) scale(0.49)">
+      <circle cx="50" cy="34" r="10" fill="#0B0B12"/>
+      <path d="M27 64 L73 53" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/>
+      <path d="M27 53 L73 64" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/>
+    </g>
+  </g>
+  <text x="88" y="62" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="40" letter-spacing="-1">
+    <tspan fill="#A1A1AA" font-weight="400">the</tspan><tspan fill="#7C3AED" font-weight="700">bouncr</tspan>
+  </text>
+</svg>
