@@ -64,9 +64,14 @@ export class MemoryStore implements Store {
 
   async getPlan(ref: string): Promise<Plan | null> {
     // Resolve by internal id OR public plan_key — the widget references the
-    // friendly key (e.g. "pro_monthly"), internal callers pass the id.
+    // friendly key (e.g. "pro_monthly"), internal callers pass the id. Active only.
     const p = this.plans.get(ref) ?? [...this.plans.values()].find((x) => x.planKey === ref);
-    return p ? clone(p) : null;
+    return p && p.active ? clone(p) : null;
+  }
+
+  async getPlanById(id: string): Promise<Plan | null> {
+    const p = this.plans.get(id);
+    return p ? clone(p) : null; // any active state — owner ops
   }
 
   async createPlan(plan: Plan): Promise<Plan> {
@@ -90,7 +95,10 @@ export class MemoryStore implements Store {
   }
 
   async listPlansByMerchant(merchantId: string): Promise<Plan[]> {
-    return [...this.plans.values()].filter((p) => p.merchantId === merchantId && p.active).map(clone);
+    return [...this.plans.values()]
+      .filter((p) => p.merchantId === merchantId)
+      .sort((a, b) => Number(b.active) - Number(a.active) || a.id.localeCompare(b.id))
+      .map(clone);
   }
 
   async createSession(rec: NewSession): Promise<SessionRecord> {

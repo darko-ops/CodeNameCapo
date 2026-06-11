@@ -371,7 +371,7 @@ export class BouncrService {
   /** Load a plan, but only if it belongs to `merchantId`. 404 (not 403) on a
    *  mismatch so a merchant can't probe for other merchants' plan ids. */
   async requireOwnedPlan(planId: string, merchantId: string): Promise<Plan> {
-    const plan = await this.store.getPlan(planId);
+    const plan = await this.store.getPlanById(planId); // owner sees inactive plans too
     if (!plan || plan.merchantId !== merchantId) throw new ServiceError("not_found", `plan ${planId} not found`);
     return plan;
   }
@@ -379,7 +379,7 @@ export class BouncrService {
   /** Assert a session belongs to `merchantId` (via its plan). */
   async requireOwnedSession(sessionId: string, merchantId: string): Promise<void> {
     const session = await this.store.getSession(sessionId);
-    const plan = session ? await this.store.getPlan(session.planId) : null;
+    const plan = session ? await this.store.getPlanById(session.planId) : null;
     if (!session || !plan || plan.merchantId !== merchantId) {
       throw new ServiceError("not_found", `session ${sessionId} not found`);
     }

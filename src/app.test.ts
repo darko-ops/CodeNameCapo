@@ -319,6 +319,30 @@ describe("merchant signup / onboarding (Spec §9)", () => {
     expect((await patch({ list_price: 10 }, { authorization: "Bearer " + other.token })).status).toBe(404);
   });
 
+  it("deactivates a plan — widget can't negotiate it, but it stays manageable and reactivates", async () => {
+    const { app } = makeApp();
+    const s = await (await post(app, "/v1/signup", { name: "ToggleCo" })).json();
+    const auth = { authorization: "Bearer " + s.token };
+    const id = (await (await post(app, "/v1/plans", { product_name: "Tog Pro", list_price: 30, floor_price: 20 }, auth)).json()).plan.id;
+    const patch = (body: unknown) => app.request(`/v1/plans/${id}`, { method: "PATCH", headers: { "content-type": "application/json", ...auth }, body: JSON.stringify(body) });
+
+    // active by default → negotiable.
+    expect((await post(app, "/v1/sessions", { plan_id: id, end_user_ref: "u" })).status).toBe(201);
+
+    // Deactivate → widget can no longer start a negotiation on it.
+    expect((await (await patch({ active: false })).json()).plan.active).toBe(false);
+    expect((await post(app, "/v1/sessions", { plan_id: id, end_user_ref: "u" })).status).toBe(404);
+
+    // …but it's still listed for the merchant (so they can turn it back on) and editable.
+    const plans = (await (await app.request("/v1/plans", { headers: auth })).json()).plans;
+    expect(plans.find((p: any) => p.id === id)?.active).toBe(false);
+    expect((await (await patch({ list_price: 35 })).json()).plan.list_price).toBe(35); // editable while inactive
+
+    // Reactivate → negotiable again.
+    expect((await (await patch({ active: true })).json()).plan.active).toBe(true);
+    expect((await post(app, "/v1/sessions", { plan_id: id, end_user_ref: "u" })).status).toBe(201);
+  });
+
   it("rejects signup with no name and a plan that breaks the floor/target invariant", async () => {
     const { app } = makeApp();
     expect((await post(app, "/v1/signup", { name: "" })).status).toBe(400);

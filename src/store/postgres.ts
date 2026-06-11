@@ -85,9 +85,14 @@ export class PostgresStore implements Store {
   }
 
   async getPlan(ref: string): Promise<Plan | null> {
-    // Resolve by internal id OR public plan_key (widgets use the friendly key).
+    // Resolve by internal id OR public plan_key (widgets use the friendly key). Active only.
     const rows = await this.sql`
       select * from bouncr.plans where (id = ${ref} or plan_key = ${ref}) and active = true limit 1`;
+    return rows[0] ? mapPlan(rows[0]) : null;
+  }
+
+  async getPlanById(id: string): Promise<Plan | null> {
+    const rows = await this.sql`select * from bouncr.plans where id = ${id} limit 1`;
     return rows[0] ? mapPlan(rows[0]) : null;
   }
 
@@ -121,7 +126,7 @@ export class PostgresStore implements Store {
 
   async listPlansByMerchant(merchantId: string): Promise<Plan[]> {
     const rows = await this.sql`
-      select * from bouncr.plans where merchant_id = ${merchantId} and active = true order by id`;
+      select * from bouncr.plans where merchant_id = ${merchantId} order by active desc, id`;
     return rows.map(mapPlan);
   }
 

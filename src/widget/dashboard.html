@@ -113,6 +113,7 @@
       <div class="lint err" id="edit-err" style="margin-top:8px"></div>
       <div style="display:flex; gap:10px; align-items:center">
         <button type="submit" id="edit-save">Save changes</button>
+        <button type="button" class="ghost" id="toggle-active">Deactivate plan</button>
         <span class="meta" id="edit-status"></span>
       </div>
     </form>
@@ -228,7 +229,7 @@
         const o = document.createElement("option");
         o.value = p.id;
         const product = p.persona && p.persona.product_name ? p.persona.product_name : p.id;
-        o.textContent = product + " · $" + p.list_price + "/mo";
+        o.textContent = product + " · $" + p.list_price + "/mo" + (p.active ? "" : " (inactive)");
         sel.appendChild(o);
       }
       const last = localStorage.getItem("bouncr_dash_plan");
@@ -249,8 +250,33 @@
     $("e-floor").value = p.floor_price;
     $("e-target").value = p.target_price;
     $("e-fee").value = p.application_fee_percent == null ? "" : p.application_fee_percent;
+    const tg = $("toggle-active");
+    tg.textContent = p.active ? "Deactivate plan" : "Reactivate plan";
+    tg.style.color = p.active ? "var(--err)" : "var(--ok)";
+    tg.style.borderColor = p.active ? "rgba(248,113,113,.4)" : "rgba(52,211,153,.4)";
     $("edit-err").textContent = ""; $("edit-status").textContent = "";
   }
+
+  // Deactivate / reactivate the selected plan. Deactivating stops its embed from
+  // accepting new negotiations (the widget can't resolve an inactive plan), but
+  // it stays in the dashboard so it can be turned back on.
+  $("toggle-active").onclick = async () => {
+    const p = PLANS.find((x) => x.id === $("plan").value);
+    if (!p) return;
+    const next = !p.active;
+    if (!next && !confirm("Deactivate this plan? Its embed will stop accepting new negotiations.")) return;
+    $("edit-err").textContent = ""; $("edit-status").textContent = next ? "reactivating…" : "deactivating…";
+    try {
+      const r = guard(await fetch(base() + "/v1/plans/" + encodeURIComponent(p.id), {
+        method: "PATCH", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify({ active: next }),
+      }));
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "could not update");
+      $("edit-status").textContent = next ? "reactivated ✓" : "deactivated ✓";
+      await loadPlans();
+      $("plan").value = d.plan.id; fillEdit(d.plan.id); load();
+    } catch (err) { $("edit-status").textContent = ""; $("edit-err").textContent = err.message; }
+  };
 
   $("edit-form").addEventListener("submit", async (e) => {
     e.preventDefault();

@@ -184,11 +184,14 @@ export interface Store {
   createMerchant(merchant: Merchant): Promise<Merchant>;
   updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>): Promise<Merchant>;
 
+  /** Resolve a plan for negotiation: by id OR public plan_key, ACTIVE only. */
   getPlan(planId: string): Promise<Plan | null>;
+  /** Resolve a plan by id for owner/admin ops, regardless of active state. */
+  getPlanById(id: string): Promise<Plan | null>;
   createPlan(plan: Plan): Promise<Plan>;
   /** Replace a plan's mutable fields (config, persona, fee, currency, active, version). */
   updatePlan(id: string, fields: PlanUpdate): Promise<Plan>;
-  /** All active plans owned by a merchant (dashboard / onboarding). */
+  /** All plans owned by a merchant — active AND inactive (dashboard manages both). */
   listPlansByMerchant(merchantId: string): Promise<Plan[]>;
 
   createSession(rec: NewSession): Promise<SessionRecord>;
