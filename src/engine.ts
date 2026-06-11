@@ -184,13 +184,13 @@ export function decide(
   const u = Math.max(offer, 0); // a negative "offer" is meaningless; treat as 0.
 
   // --- Acceptance (I1: never accept below the floor) -----------------------
-  // Accept if they've cleared the target (never haggle past target) OR met our
-  // ask within acceptThreshold — in BOTH cases only if it clears the floor.
-  // Acceptance is unconditional on reasoning: a good offer closes either way.
-  const meetsTarget = u >= c.targetPrice;
-  const meetsThreshold = u >= c.acceptThreshold * s.currentAsk;
-  if (u >= c.floorPrice && (meetsTarget || meetsThreshold)) {
-    return accept(u, c);
+  // Close ONLY when the offer is within acceptThreshold of our CURRENT ask — i.e.
+  // they genuinely met us. An offer that beats the target but still sits well
+  // below our standing ask gets haggled UP (countered), not instantly pocketed.
+  // (Offering at/above the ask closes at the ask, never overcharging.)
+  // Acceptance is independent of reasoning: meeting the ask closes either way.
+  if (u >= c.floorPrice && u >= c.acceptThreshold * s.currentAsk) {
+    return accept(Math.min(u, s.currentAsk), c);
   }
 
   // --- No reasoning => small goodwill room, then hold ----------------------

@@ -38,10 +38,16 @@ describe("scripted negotiation (sanity)", () => {
     expect(s.round).toBe(0);
   });
 
-  it("accepts immediately when the user clears the target", () => {
-    const s = openSession(CFG, 0);
-    const a = decide(s, 25, CFG, 0); // 25 >= target 22
-    expect(a).toEqual({ type: "accept", amount: 25 });
+  it("accepts when the user meets the standing ask (within threshold)", () => {
+    const s = openSession(CFG, 0); // ask 48, acceptThreshold 0.97 → 46.56
+    const a = decide(s, 47, CFG, 0);
+    expect(a).toEqual({ type: "accept", amount: 47 });
+  });
+
+  it("does NOT accept an above-target offer that's still well below the ask", () => {
+    const s = openSession(CFG, 0); // ask 48, target 22
+    const a = decide(s, 30, CFG, 0); // 30 > target but << 0.97*48 → haggle up, not accept
+    expect(a.type).not.toBe("accept");
   });
 
   it("counters a lowball with a smaller-than-anchor, floor-respecting ask", () => {
@@ -90,7 +96,7 @@ describe("scripted negotiation (sanity)", () => {
 
   it("accepts a genuinely good offer regardless of reasoning tier", () => {
     const s = openSession(CFG, 0);
-    expect(decide(s, 25, CFG, 0, { reasoning: "none" })).toEqual({ type: "accept", amount: 25 });
+    expect(decide(s, 47, CFG, 0, { reasoning: "none" })).toEqual({ type: "accept", amount: 47 });
   });
 
   it("stronger reasoning unlocks a strictly lower reachable price", () => {
@@ -380,12 +386,16 @@ describe("I4: determinism", () => {
 // ---------------------------------------------------------------------------
 
 describe("acceptance semantics", () => {
-  it("clearing the target (within the window) always closes the deal at the offer", () => {
+  it("before the final round, an offer below acceptThreshold × ask is haggled, not pocketed", () => {
     fc.assert(
       fc.property(liveScenarioArb, ({ c, s, now }) => {
-        const offer = c.targetPrice; // exactly the target
+        if (s.round >= c.maxRounds - 1) return; // final round can close at its lower final ask
+        // A cent under the threshold — must NOT close (the old 'clear the target'
+        // shortcut is gone; you have to meet the standing ask).
+        const offer = round2(c.acceptThreshold * s.currentAsk - 0.01);
+        if (offer < c.floorPrice) return; // floor cases handled elsewhere
         const a = decide(s, offer, c, now);
-        expect(a).toEqual({ type: "accept", amount: round2(offer) });
+        expect(a.type).not.toBe("accept");
       }),
       { numRuns: RUNS },
     );

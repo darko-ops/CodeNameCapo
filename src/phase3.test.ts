@@ -101,10 +101,11 @@ describe("WTP analytics (Spec §11)", () => {
   it("computes funnel, offer distribution, and closing stats from real negotiations", async () => {
     const { plan, store, service } = setup();
 
-    // Session A: engages, then closes at $36 (above the $32 target) → settle.
+    // Session A: engages (first offer $3 → counter), then meets the ask → settle.
     const a = await service.createSession({ planId: plan.id, endUserRef: "a" });
-    await service.postMessage(a.sessionId, "$3"); // first offer 3, counter
-    const close = await service.postMessage(a.sessionId, "$36"); // accept
+    const t1 = await service.postMessage(a.sessionId, "$3"); // first offer 3, counter
+    const ask = t1.currentAsk;
+    const close = await service.postMessage(a.sessionId, `ok ${ask}`); // meets the ask → accept
     await service.handleStripeEvent(completed((await store.getDeal(close.dealId!))!.stripeCheckoutId!));
 
     // Session B: engages but never closes.
@@ -120,9 +121,9 @@ describe("WTP analytics (Spec §11)", () => {
     expect(an.funnel.accepted).toBe(1);
     expect(an.funnel.settled).toBe(1);
     expect(an.offers.firstOffers.sort((x, y) => x - y)).toEqual([3, 5]);
-    expect(an.offers.closingPrices).toEqual([36]);
-    expect(an.closing.medianPrice).toBe(36);
-    expect(an.closing.revenue).toBe(36);
+    expect(an.offers.closingPrices).toEqual([ask]);
+    expect(an.closing.medianPrice).toBe(ask);
+    expect(an.closing.revenue).toBe(ask);
     expect(an.reference).toMatchObject({ list: 30, target: 32, floor: 22 });
   });
 });

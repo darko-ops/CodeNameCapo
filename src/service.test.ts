@@ -70,8 +70,9 @@ describe("full negotiate → accept → settle flow", () => {
     expect(t1.checkoutUrl).toBeUndefined();
     expect(t1.status).toBe("open");
 
-    // Clear the target ($32) — engine accepts, a checkout is created.
-    const t2 = await service.postMessage(sessionId, "fine, $36/mo");
+    // Meet the standing ask — engine accepts at it, a checkout is created.
+    const ask = t1.currentAsk;
+    const t2 = await service.postMessage(sessionId, `ok deal, ${ask}`);
     expect(t2.action.type).toBe("accept");
     expect(t2.checkoutUrl).toBeDefined();
     expect(t2.dealId).toBeDefined();
@@ -80,9 +81,9 @@ describe("full negotiate → accept → settle flow", () => {
     // Deal is pending; Stripe was asked for the negotiated amount.
     const deal = await store.getDeal(t2.dealId!);
     expect(deal?.status).toBe("pending");
-    expect(deal?.price).toBe(36);
+    expect(deal?.price).toBe(ask);
     expect(deal?.currency).toBe("usd");
-    expect(stripe.checkouts.at(-1)).toMatchObject({ amount: 36, currency: "usd", dealId: t2.dealId });
+    expect(stripe.checkouts.at(-1)).toMatchObject({ amount: ask, currency: "usd", dealId: t2.dealId });
 
     // Webhook settles it.
     const r = await service.handleStripeEvent(completed(deal!.stripeCheckoutId!));
@@ -97,7 +98,7 @@ describe("full negotiate → accept → settle flow", () => {
   it("is idempotent on webhook re-delivery", async () => {
     const { store, service } = makeService();
     const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "u" });
-    const t = await service.postMessage(sessionId, "$36");
+    const t = await service.postMessage(sessionId, "$46");
     const deal = await store.getDeal(t.dealId!);
     const first = await service.handleStripeEvent(completed(deal!.stripeCheckoutId!, "sub_A"));
     const second = await service.handleStripeEvent(completed(deal!.stripeCheckoutId!, "sub_B"));
