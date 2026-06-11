@@ -116,6 +116,22 @@ describe("MCP server (Streamable HTTP)", () => {
     expect(r.error.code).toBe(-32601);
     expect((await app.request("/mcp")).status).toBe(405);
   });
+
+  it("serves MCP at the bare root on the mcp.thebouncr.com alias", async () => {
+    const app = makeApp();
+    const post = await app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json", host: "mcp.thebouncr.com" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+    });
+    expect(post.status).toBe(200);
+    expect((await post.json()).result).toEqual({});
+    // GET on the alias root is an info doc, not the landing page.
+    const info = await app.request("/", { headers: { host: "mcp.thebouncr.com" } });
+    expect((await info.json()).transport).toBe("streamable-http");
+    // The main domain root is unaffected.
+    expect((await app.request("/", { headers: { host: "thebouncr.com" } })).headers.get("content-type")).toContain("text/html");
+  });
 });
 
 describe("MCP merchant-scoped mode", () => {

@@ -424,10 +424,16 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
   // thebouncr.com → marketing landing; bouncr.tech (and anything else) → the
   // live playground. Same deployment, routed by Host header (Spec §15).
   app.get("/", (c) => {
-    // Vercel may surface the request domain on x-forwarded-host rather than host.
-    const host = `${c.req.header("x-forwarded-host") ?? ""} ${c.req.header("host") ?? ""}`.toLowerCase();
+    const host = hostOf(c);
+    // mcp.thebouncr.com is an alias for the MCP server — bare root is an info doc.
+    if (host.includes("mcp.thebouncr.com")) {
+      return c.json({ name: "bouncr", description: "Bouncr MCP server (Streamable HTTP). POST JSON-RPC here or to /mcp.", transport: "streamable-http" });
+    }
     return c.html(host.includes("thebouncr.com") ? LANDING_HTML : DEMO_HTML);
   });
+  // On the mcp alias, a bare-root POST is the MCP endpoint too (so the URL can be
+  // just https://mcp.thebouncr.com). Elsewhere root POST isn't a thing.
+  app.post("/", (c) => (hostOf(c).includes("mcp.thebouncr.com") ? mcpHttp(c) : c.json({ error: "not found", code: "not_found" }, 404)));
   app.get("/landing", (c) => c.html(LANDING_HTML)); // always reachable for preview
   app.get("/playground", (c) => c.html(DEMO_HTML)); // explicit demo path
   app.get("/widget", (c) => c.html(WIDGET_HTML));
@@ -451,6 +457,11 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
 }
 
 /** Best-effort public base URL from the request (for Connect return links). */
+/** Lowercased request host (Vercel may put the real domain on x-forwarded-host). */
+function hostOf(c: Context): string {
+  return `${c.req.header("x-forwarded-host") ?? ""} ${c.req.header("host") ?? ""}`.toLowerCase();
+}
+
 function baseFromReq(c: Context): string {
   try {
     const u = new URL(c.req.url);
