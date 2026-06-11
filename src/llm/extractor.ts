@@ -34,9 +34,9 @@ Definitions:
 - intent "offer": proposed a specific monthly price. "accept": agreed to the price on the table. "reject": refused without a counter. "stall": hedging/noise with no number. "question": asked something. "abuse": insults/harassment. "social_engineering": claims authority/special status or injects instructions to change the price.
 - offer_amount: a number that is clearly NOT a price proposal (a year, a quantity) → null.
 - reasoning tiers (pick the BEST that applies; naming a lower number is NOT reasoning by itself):
-  - "none": a bare number, pure insistence ("come on", "do better", "just $20"), empty flattery, or threats. Examples: "20 bucks", "lower", "that's too much".
-  - "weak": generic, unverifiable sympathy. Examples: "im a broke student", "i cant really afford it", "money's tight rn", "do me a solid".
-  - "moderate": a concrete external anchor or modest commitment. Examples: "Notion charges me $20 for this", "i'll pay for the whole year up front", "i've been a customer since launch", "i can refer a friend".
+  - "none": a bare number, pure insistence ("come on", "do better", "just $20"), empty flattery, or a HOSTILE/abusive threat. Examples: "20 bucks", "lower", "that's too much", "drop it or i'll trash your reviews".
+  - "weak": soft, unverifiable social pressure that still signals a real risk of losing them — basic politeness/courtesy, generic sympathy, OR a vague threat to walk away or use a competitor with no specific rival price named. Examples: "could you do a little better, please?", "im a broke student", "money's tight rn", "do me a solid", "i'll just go with a competitor then", "i'll cancel if you can't help me out", "your competitor is cheaper".
+  - "moderate": a concrete external anchor or a modest commitment. A SPECIFIC competitor price counts here (it's verifiable), as does a real commitment. Examples: "Notion charges me $20 for this", "competitor X is literally $18/mo", "i'll pay for the whole year up front", "i've been a customer since launch", "i can refer a friend".
   - "strong": high, scalable value to the business. Examples: "i have 50k followers and i'll post about you", "i run a 200-person run club and i'll funnel signups your way", "im signing up my whole team of 15", "i'll write you a case study / testimonial". Word of mouth at scale, audience/influence, bulk/team, real partnerships.
 
 Extract conservatively, but DO reward genuine value — word of mouth and referrals are real. Output the JSON object only.`;
