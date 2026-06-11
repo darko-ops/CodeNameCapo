@@ -27,6 +27,10 @@
   input::placeholder { color:#5a5a6a; }
   input:focus, select:focus { outline:none; border-color:var(--accent); }
   .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+  .fhint { font-size:11px; color:var(--muted); margin-top:4px; line-height:1.4; }
+  .range { margin-top:16px; padding:12px 14px; border-radius:10px; background:rgba(124,58,237,.08); border:1px solid rgba(124,58,237,.25); font-size:13.5px; line-height:1.55; }
+  .range b { color:var(--accent2); }
+  .range.bad { background:rgba(248,113,113,.08); border-color:rgba(248,113,113,.3); }
   button { background:var(--accent); color:#fff; border:0; border-radius:11px; padding:12px 20px; font:inherit; font-weight:700; cursor:pointer; margin-top:20px; transition:.15s; }
   button:hover { background:#8b5cf6; }
   button:disabled { opacity:.55; cursor:default; }
@@ -82,24 +86,30 @@
     <p class="sub">A few essentials. The rest gets sensible defaults you can tune later.</p>
     <div class="card">
       <form id="plan-form">
-        <label for="product">Product name (what the bouncer is selling)</label>
+        <label for="product">Product name (what Vini is selling)</label>
         <input id="product" placeholder="Obius Pro" required />
+
+        <div class="hint" style="margin:16px 0 2px">Set the range Vini negotiates in: Vini opens at your <b style="color:var(--text)">list price</b> and works down toward your <b style="color:var(--text)">floor</b>, never below it.</div>
         <div class="row">
           <div>
             <label for="list">List price ($/mo)</label>
             <input id="list" type="number" min="1" step="0.01" placeholder="30" required />
+            <div class="fhint">Your normal price. Where Vini opens.</div>
           </div>
           <div>
-            <label for="floor">Floor (your cost) $/mo</label>
+            <label for="floor">Floor ($/mo)</label>
             <input id="floor" type="number" min="1" step="0.01" placeholder="22" required />
+            <div class="fhint">Your cost. Vini never goes below this.</div>
           </div>
           <div>
             <label for="target">Target <span style="opacity:.6">(optional)</span></label>
-            <input id="target" type="number" min="1" step="0.01" placeholder="= list" />
+            <input id="target" type="number" min="1" step="0.01" placeholder="auto" />
+            <div class="fhint">Where Vini aims. Defaults to the middle.</div>
           </div>
         </div>
-        <div class="hint">Vini opens at your list price, negotiates toward your target, and never closes below your floor.</div>
-        <label for="style">Vini's personality</label>
+        <div class="range" id="range">Enter your list price and floor to preview how Vini will negotiate.</div>
+
+        <label for="style" style="margin-top:18px">Vini's personality</label>
         <select id="style">
           <option value="sassy">Sassy</option>
           <option value="playful">Playful</option>
@@ -156,6 +166,27 @@
   }
   document.querySelectorAll(".copy").forEach((b) => b.onclick = (e) => { e.preventDefault(); copyText(b.dataset.copy); b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1200); });
   const numv = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : null; };
+
+  // Live negotiation-range preview — explains, in the user's own numbers, exactly
+  // how Vini will haggle as they type.
+  function updateRange() {
+    const list = numv("list"), floor = numv("floor"), target = numv("target");
+    const el = $("range");
+    if (list === null || floor === null) {
+      el.className = "range";
+      el.textContent = "Enter your list price and floor to preview how Vini will negotiate.";
+      return;
+    }
+    if (floor >= list) {
+      el.className = "range bad";
+      el.innerHTML = "Your <b>floor</b> needs to be below your <b>list price</b>, otherwise there's no room to negotiate.";
+      return;
+    }
+    const t = target !== null ? target : Math.round(((list + floor) / 2) * 100) / 100;
+    el.className = "range";
+    el.innerHTML = `Vini opens at <b>$${list}/mo</b>, aims for <b>$${t}/mo</b>, and never closes below <b>$${floor}/mo</b>. The stronger a buyer's case, the closer to your floor they can get.`;
+  }
+  ["list", "floor", "target"].forEach((id) => $(id).addEventListener("input", updateRange));
 
   // Step 1 -> 2: just collect + validate. NOTHING is created yet.
   $("account-form").addEventListener("submit", (e) => {

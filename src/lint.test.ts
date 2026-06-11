@@ -32,12 +32,12 @@ describe("lintConfig (Spec §12)", () => {
     expect(r.errors.join(" ")).toMatch(/anchor/);
   });
 
-  it("warns on a low anchor multiplier and a too-generous accept threshold", () => {
-    const r = lintConfig({ ...base(), anchorMultiplier: 1.6 }); // still >1.5? 1.6 ok; use 1.4
-    const r2 = lintConfig({ ...base(), anchorMultiplier: 1.4, acceptThreshold: 0.7 });
-    expect(r.ok).toBe(true);
-    expect(r2.warnings.join(" ")).toMatch(/anchorMultiplier/);
-    expect(r2.warnings.join(" ")).toMatch(/acceptThreshold/);
+  it("warns on a too-generous accept threshold; open-at-list is fine, absurd anchors are flagged", () => {
+    expect(lintConfig({ ...base(), acceptThreshold: 0.7 }).warnings.join(" ")).toMatch(/acceptThreshold/);
+    // opening at list price (×1 with target below list) is a valid model — no warning
+    expect(lintConfig({ ...base(), targetPrice: 26, anchorMultiplier: 1 }).warnings.join(" ")).not.toMatch(/anchorMultiplier/);
+    // but an absurdly high open is still flagged
+    expect(lintConfig({ ...base(), anchorMultiplier: 20 }).warnings.join(" ")).toMatch(/anchorMultiplier/);
   });
 
   it("validates the negotiation policy", () => {

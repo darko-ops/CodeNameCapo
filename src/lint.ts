@@ -40,8 +40,8 @@ export function lintConfig(c: Config, policy?: NegotiationPolicy): LintResult {
   // --- warnings: legal but suspicious --------------------------------------
   if (c.floorPrice > 0 && c.floorPrice < MIN_FLOOR)
     warnings.push(`floorPrice $${c.floorPrice} is below the suggested minimum of $${MIN_FLOOR}`);
-  if (c.anchorMultiplier < 1.5)
-    warnings.push(`anchorMultiplier ${c.anchorMultiplier} is low — little headroom to anchor high (Poke opened 3–10×)`);
+  // anchorMultiplier 1 = open at list price (a discount-only model) — that's a
+  // valid, intended setup, so we don't warn on it. Only flag an absurdly high open.
   if (c.anchorMultiplier > 12)
     warnings.push(`anchorMultiplier ${c.anchorMultiplier} is very high — the opening ask may feel absurd`);
   if (c.acceptThreshold < 0.85)
