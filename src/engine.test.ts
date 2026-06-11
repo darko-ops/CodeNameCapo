@@ -130,6 +130,39 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, null, CFG, 0, { reasoning: "none" }).type).toBe("hold");
   });
 
+  it("never haggles a reasoned offer DOWN below the user's own number", () => {
+    // Reproduces the live bug: late in the haggle the concession curve has
+    // decayed below the user's offer, so the old split-the-difference proposed
+    // LESS than they offered ($44 ask, user offers $40 + word of mouth → it
+    // countered to ~$30). With genuine reasoning and an offer above what that
+    // reasoning could even unlock, take their number — don't discount past it.
+    const s: SessionState = { round: 4, currentAsk: 44, openedAt: 0, history: [] };
+    const a = decide(s, 40, CFG, 0, { reasoning: "moderate" }); // moderate rf=15
+    expect(a.type).toBe("accept");
+    if (a.type === "accept") expect(a.amount).toBe(40); // closes AT their offer
+  });
+
+  it("a reasoned counter never asks for less than the user already offered", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 5 }),
+        fc.integer({ min: 800, max: 4700 }).map((x) => x / 100), // ask 8..47
+        fc.integer({ min: 800, max: 4700 }).map((x) => x / 100), // offer 8..47
+        fc.constantFrom("weak", "moderate", "strong"),
+        (round, ask, offer, tier) => {
+          const s: SessionState = {
+            round,
+            currentAsk: Math.max(ask, CFG.floorPrice),
+            openedAt: 0,
+            history: [],
+          };
+          const a = decide(s, offer, CFG, 0, { reasoning: tier as any });
+          if (a.type === "counter") expect(a.amount).toBeGreaterThanOrEqual(offer - EPS);
+        },
+      ),
+    );
+  });
+
   it("walks once the deal has expired", () => {
     const s = openSession(CFG, 0);
     const past = CFG.maxDurationH * 3_600_000 + 1;

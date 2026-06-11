@@ -193,6 +193,21 @@ export function decide(
     return accept(Math.min(u, s.currentAsk), c);
   }
 
+  // They named a price WITH genuine reasoning, and it's already at/above the
+  // lowest that reasoning could ever talk us down to. Take it — never haggle a
+  // user DOWN below their own offer (the curve may have decayed past their
+  // number; splitting against it would hand them a discount they didn't ask
+  // for). Only fires when reasoning is explicitly supplied and not "none", so
+  // bare number-spitting still falls through to the no-case branch and holds.
+  if (
+    opts.reasoning &&
+    opts.reasoning !== "none" &&
+    u >= reachableFloor(tier, c) &&
+    u >= c.floorPrice
+  ) {
+    return accept(Math.min(u, s.currentAsk), c);
+  }
+
   // --- No reasoning => small goodwill room, then hold ----------------------
   // The opening move is partly free: drift down a couple points to start the
   // dance. But never below a SOFT FLOOR without a case — the price can't be
