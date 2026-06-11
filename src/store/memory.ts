@@ -62,6 +62,26 @@ export class MemoryStore implements Store {
     return clone(m);
   }
 
+  async deleteMerchant(id: string): Promise<void> {
+    const planIds = new Set([...this.plans.values()].filter((p) => p.merchantId === id).map((p) => p.id));
+    const sessionIds = new Set([...this.sessions.values()].filter((s) => planIds.has(s.planId)).map((s) => s.id));
+    for (const [dealId, d] of this.deals) {
+      if (d.merchantId === id || planIds.has(d.planId)) {
+        this.usage.delete(dealId);
+        this.deals.delete(dealId);
+      }
+    }
+    for (const sid of sessionIds) {
+      this.turns.delete(sid);
+      this.sessions.delete(sid);
+    }
+    for (const key of this.cooldowns.keys()) {
+      if (planIds.has(key.split(":")[0]!)) this.cooldowns.delete(key);
+    }
+    for (const pid of planIds) this.plans.delete(pid);
+    this.merchants.delete(id);
+  }
+
   async getPlan(ref: string): Promise<Plan | null> {
     // Resolve by internal id OR public plan_key — the widget references the
     // friendly key (e.g. "pro_monthly"), internal callers pass the id. Active only.

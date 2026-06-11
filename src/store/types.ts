@@ -183,6 +183,8 @@ export interface Store {
   getMerchant(id: string): Promise<Merchant | null>;
   createMerchant(merchant: Merchant): Promise<Merchant>;
   updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>): Promise<Merchant>;
+  /** Permanently delete a merchant and everything under it (cascade). */
+  deleteMerchant(id: string): Promise<void>;
 
   /** Resolve a plan for negotiation: by id OR public plan_key, ACTIVE only. */
   getPlan(planId: string): Promise<Plan | null>;

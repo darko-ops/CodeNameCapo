@@ -31,6 +31,9 @@
   button:hover { background:#8b5cf6; }
   button:disabled { opacity:.55; cursor:default; }
   .ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  .btn-row { display:flex; gap:10px; }
+  .btn-row button { flex:1; margin-top:20px; }
+  .btn-row .ghost { flex:0 0 auto; }
   .err { color:var(--err); font-size:13.5px; margin-top:12px; min-height:1em; }
   .keybox, .snip { margin-top:16px; background:#0d0d13; border:1px solid var(--line); border-radius:11px; padding:14px; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:13px; }
   .keybox { border-color:rgba(124,58,237,.4); }
@@ -53,41 +56,30 @@
   <div class="steps">
     <div class="s on" id="step-1">1 · Account</div>
     <div class="s" id="step-2">2 · Your plan</div>
-    <div class="s" id="step-3">3 · Embed</div>
+    <div class="s" id="step-3">3 · Done</div>
   </div>
 
-  <!-- Step 1: account -->
+  <!-- Step 1: account (collected only; nothing is created yet) -->
   <section id="sec-1">
     <h1>Create your account</h1>
-    <p class="sub">Stand up a bouncer for your product in two minutes.</p>
+    <p class="sub">Set up a bouncer for your product in two minutes. Nothing is saved until you finish.</p>
     <div class="card">
-      <form id="signup-form" autocomplete="on">
+      <form id="account-form" autocomplete="on">
         <label for="name">Business / product name</label>
         <input id="name" placeholder="Obius" required />
         <label for="email">Email <span style="opacity:.6">(optional)</span></label>
         <input id="email" type="email" placeholder="you@company.com" autocomplete="email" />
-        <div class="err" id="signup-err"></div>
-        <button id="signup-btn" type="submit">Create account →</button>
+        <div class="err" id="account-err"></div>
+        <button type="submit">Next →</button>
       </form>
     </div>
     <p class="foot">Already have a key? <a href="/dashboard">Go to the dashboard</a>.</p>
   </section>
 
-  <!-- Step 1b: show key -->
-  <section id="sec-key" class="hidden">
-    <h1>Save your API key</h1>
-    <p class="sub">This is your dashboard login. We only store a hash — you won't see it again.</p>
-    <div class="card">
-      <div class="keybox" id="key-box"><div class="keyval" id="key-val"></div><button class="copy ghost" data-copy="key-box">Copy</button></div>
-      <div class="warn">⚠ Store this somewhere safe (a password manager). It's shown once.</div>
-      <button id="key-continue">I saved it — continue →</button>
-    </div>
-  </section>
-
-  <!-- Step 2: first plan -->
+  <!-- Step 2: first plan; the final "Create account" submits everything at once -->
   <section id="sec-2" class="hidden">
     <h1>Set up your first plan</h1>
-    <p class="sub">A few essentials — the rest gets sensible defaults you can tune later.</p>
+    <p class="sub">A few essentials. The rest gets sensible defaults you can tune later.</p>
     <div class="card">
       <form id="plan-form">
         <label for="product">Product name (what the bouncer is selling)</label>
@@ -98,7 +90,7 @@
             <input id="list" type="number" min="1" step="0.01" placeholder="30" required />
           </div>
           <div>
-            <label for="floor">Floor — your cost ($/mo)</label>
+            <label for="floor">Floor (your cost) $/mo</label>
             <input id="floor" type="number" min="1" step="0.01" placeholder="22" required />
           </div>
           <div>
@@ -115,18 +107,24 @@
           <option value="professional">Professional</option>
         </select>
         <div class="err" id="plan-err"></div>
-        <button id="plan-btn" type="submit">Create plan →</button>
+        <div class="btn-row">
+          <button type="button" class="ghost" id="back-1">← Back</button>
+          <button type="submit" id="create-btn">Create account →</button>
+        </div>
       </form>
     </div>
   </section>
 
-  <!-- Step 3: embed -->
+  <!-- Step 3: done — account + plan now exist; show the key + embed -->
   <section id="sec-3" class="hidden">
-    <h1>Drop it on your pricing page</h1>
-    <p class="sub">One tag mounts your bouncer wherever this element is.</p>
+    <h1>You're in. Save your API key.</h1>
+    <p class="sub">This is your dashboard login. We only store a hash, so you won't see it again.</p>
     <div class="card">
+      <div class="keybox" id="key-box"><div class="keyval" id="key-val"></div><button class="copy ghost" data-copy="key-box">Copy</button></div>
+      <div class="warn">⚠ Store this somewhere safe (a password manager). It's shown once.</div>
+      <p class="hint" style="margin-top:20px">Drop your bouncer on your pricing page:</p>
       <div class="snip" id="snip-box"><div class="keyval" id="snip-val"></div><button class="copy ghost" data-copy="snip-box">Copy</button></div>
-      <p class="hint" style="margin-top:12px">Add a target element too: <code>&lt;div id="bouncr"&gt;&lt;/div&gt;</code></p>
+      <p class="hint" style="margin-top:8px">Add a target element too: <code>&lt;div id="bouncr"&gt;&lt;/div&gt;</code></p>
       <div id="preview"></div>
       <button id="to-dashboard">Open your dashboard →</button>
     </div>
@@ -139,11 +137,12 @@
   const $ = (id) => document.getElementById(id);
   const TKEY = "bouncr_dash_token";
   const base = location.origin;
-  let token = null, newPlanId = null;
 
+  // Inputs persist in the DOM as we hide/show steps, so going Back keeps values.
   function show(sec) {
-    ["sec-1","sec-key","sec-2","sec-3"].forEach((s) => $(s).classList.add("hidden"));
+    ["sec-1","sec-2","sec-3"].forEach((s) => $(s).classList.add("hidden"));
     $(sec).classList.remove("hidden");
+    window.scrollTo(0, 0);
   }
   function mark(stepNum) {
     [1,2,3].forEach((n) => {
@@ -156,53 +155,45 @@
     navigator.clipboard && navigator.clipboard.writeText(t);
   }
   document.querySelectorAll(".copy").forEach((b) => b.onclick = (e) => { e.preventDefault(); copyText(b.dataset.copy); b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1200); });
+  const numv = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : null; };
 
-  // Step 1 — signup
-  $("signup-form").addEventListener("submit", async (e) => {
+  // Step 1 -> 2: just collect + validate. NOTHING is created yet.
+  $("account-form").addEventListener("submit", (e) => {
     e.preventDefault();
-    $("signup-err").textContent = "";
-    $("signup-btn").disabled = true;
-    try {
-      const r = await fetch(base + "/v1/signup", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: $("name").value.trim(), email: $("email").value.trim() || null }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "signup failed");
-      token = d.token; localStorage.setItem(TKEY, token);
-      $("key-val").textContent = d.key;
-      mark(1); show("sec-key");
-    } catch (err) { $("signup-err").textContent = err.message; }
-    finally { $("signup-btn").disabled = false; }
+    $("account-err").textContent = "";
+    if (!$("name").value.trim()) { $("account-err").textContent = "a business name is required"; return; }
+    mark(2); show("sec-2");
   });
-  $("key-continue").onclick = () => { mark(2); show("sec-2"); };
 
-  // Step 2 — create plan
+  // Back: return to step 1 (values are preserved in the inputs).
+  $("back-1").onclick = () => { mark(1); show("sec-1"); };
+
+  // Step 2 (final): create the account AND the first plan in one atomic call.
   $("plan-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     $("plan-err").textContent = "";
-    $("plan-btn").disabled = true;
+    const list = numv("list"), floor = numv("floor"), target = numv("target");
+    if (!$("product").value.trim() || list === null || floor === null) {
+      $("plan-err").textContent = "product name, list price, and floor are required"; return;
+    }
+    if (floor >= list) { $("plan-err").textContent = "your floor must be below your list price"; return; }
+    $("create-btn").disabled = true; $("back-1").disabled = true;
     try {
-      const numv = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : null; };
-      const body = {
-        product_name: $("product").value.trim(),
-        list_price: numv("list"),
-        floor_price: numv("floor"),
-        persona_style: $("style").value,
-      };
-      const tv = numv("target"); if (tv !== null) body.target_price = tv;
-      const r = await fetch(base + "/v1/plans", {
-        method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + token },
-        body: JSON.stringify(body),
+      const plan = { product_name: $("product").value.trim(), list_price: list, floor_price: floor, persona_style: $("style").value };
+      if (target !== null) plan.target_price = target;
+      const r = await fetch(base + "/v1/signup", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: $("name").value.trim(), email: $("email").value.trim() || null, plan }),
       });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "could not create plan");
-      newPlanId = d.plan.id;
+      if (!r.ok) throw new Error(d.error || "could not create your account");
+      localStorage.setItem(TKEY, d.token);
+      $("key-val").textContent = d.key;
       $("snip-val").textContent = d.embed.snippet;
       mark(3); show("sec-3");
-      try { window.Bouncr && Bouncr.mount({ el: "#preview", planId: newPlanId, userRef: "preview_" + Math.random().toString(36).slice(2,8) }); } catch (_) {}
+      try { window.Bouncr && Bouncr.mount({ el: "#preview", planId: d.plan.id, userRef: "preview_" + Math.random().toString(36).slice(2,8) }); } catch (_) {}
     } catch (err) { $("plan-err").textContent = err.message; }
-    finally { $("plan-btn").disabled = false; }
+    finally { $("create-btn").disabled = false; $("back-1").disabled = false; }
   });
 
   $("to-dashboard").onclick = () => { location.href = "/dashboard"; };

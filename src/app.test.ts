@@ -357,6 +357,54 @@ describe("merchant signup / onboarding (Spec §9)", () => {
     // Creating a plan requires auth.
     expect((await post(app, "/v1/plans", { product_name: "X", list_price: 40, floor_price: 20 })).status).toBe(401);
   });
+
+  it("creates the account AND first plan atomically; an invalid plan creates nothing", async () => {
+    const { app } = makeApp();
+    const ok = await post(app, "/v1/signup", {
+      name: "Atomic Co",
+      plan: { product_name: "Atomic Pro", list_price: 30, floor_price: 20 },
+    });
+    expect(ok.status).toBe(201);
+    const d = await ok.json();
+    expect(d.merchant.id).toMatch(/^merchant_/);
+    expect(d.plan.list_price).toBe(30);
+    expect(d.embed.snippet).toContain(`data-plan="${d.plan.id}"`);
+    // Plan is live for the merchant and negotiable immediately.
+    const auth = { authorization: "Bearer " + d.token };
+    expect((await (await app.request("/v1/plans", { headers: auth })).json()).plans).toHaveLength(1);
+    expect((await post(app, "/v1/sessions", { plan_id: d.plan.id, end_user_ref: "u" })).status).toBe(201);
+
+    // Invalid plan (floor ≥ list) → 400, and NO account/key is returned (nothing created).
+    const bad = await post(app, "/v1/signup", {
+      name: "BadAtomic",
+      plan: { product_name: "X", list_price: 20, floor_price: 30 },
+    });
+    expect(bad.status).toBe(400);
+    const bd = await bad.json();
+    expect(bd.key).toBeUndefined();
+    expect(bd.token).toBeUndefined();
+  });
+
+  it("deletes an account and everything under it, blocking further access", async () => {
+    const { app } = makeApp();
+    const s = await (await post(app, "/v1/signup", {
+      name: "DelCo",
+      plan: { product_name: "Del Pro", list_price: 30, floor_price: 20 },
+    })).json();
+    const auth = { authorization: "Bearer " + s.token };
+    const planId = s.plan.id;
+    expect((await post(app, "/v1/sessions", { plan_id: planId, end_user_ref: "u" })).status).toBe(201);
+
+    // Delete requires auth.
+    expect((await app.request("/v1/account", { method: "DELETE" })).status).toBe(401);
+
+    const del = await app.request("/v1/account", { method: "DELETE", headers: auth });
+    expect(del.status).toBe(200);
+
+    // The plan is gone (not negotiable) and the key no longer logs in.
+    expect((await post(app, "/v1/sessions", { plan_id: planId, end_user_ref: "u" })).status).toBe(404);
+    expect((await post(app, "/v1/auth/login", { key: s.key })).status).toBe(401);
+  });
 });
 
 describe("merchant dashboard auth (Spec §9)", () => {

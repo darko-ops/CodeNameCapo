@@ -60,6 +60,16 @@ export interface CreateSessionInput {
   context?: Record<string, unknown>;
 }
 
+/** The handful of essentials a merchant supplies to create a plan. */
+export interface PlanInput {
+  productName: string;
+  listPrice: number;
+  floorPrice: number;
+  targetPrice?: number;
+  currency?: string;
+  personaStyle?: Persona["style"];
+}
+
 export interface TurnResponse {
   reply: string;
   action: Action;
@@ -181,7 +191,11 @@ export class BouncrService {
    * Create a new merchant and mint its dashboard API key. Returns the merchant
    * and the plaintext key (shown to the user ONCE — only the hash is stored).
    */
-  async signupMerchant(input: { name: string; email?: string | null }): Promise<{ merchant: Merchant; key: string }> {
+  async signupMerchant(input: {
+    name: string;
+    email?: string | null;
+    plan?: PlanInput;
+  }): Promise<{ merchant: Merchant; key: string; plan?: Plan }> {
     const name = input.name?.trim();
     if (!name) throw new ServiceError("bad_request", "a business name is required");
     const email = input.email?.trim() || null;
@@ -190,6 +204,10 @@ export class BouncrService {
     }
     const id = `merchant_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
     const key = generateMerchantKey(id);
+    // Lint/assemble the first plan BEFORE creating anything — an invalid plan
+    // creates no account, so the merchant is only "fulfilled" once it all checks
+    // out and the final step runs.
+    const planToCreate = input.plan ? this.assemblePlan(id, input.plan) : null;
     const merchant = await this.store.createMerchant({
       id,
       name,
@@ -199,7 +217,8 @@ export class BouncrService {
       createdAt: this.now(),
     });
     await this.store.appendEvent("merchant.signup", { merchantId: id, name, hasEmail: Boolean(email) });
-    return { merchant, key };
+    const plan = planToCreate ? await this.store.createPlan(planToCreate) : undefined;
+    return { merchant, key, ...(plan ? { plan } : {}) };
   }
 
   /** A merchant's own plans (onboarding / dashboard). */
@@ -207,22 +226,33 @@ export class BouncrService {
     return this.store.listPlansByMerchant(merchantId);
   }
 
+  /** Permanently delete a merchant account and everything under it (plans,
+   *  sessions, deals, etc.). Irreversible — the dashboard confirms first. */
+  async deleteAccount(merchantId: string): Promise<void> {
+    await this.store.deleteMerchant(merchantId);
+    await this.store.appendEvent("merchant.deleted", { merchantId });
+  }
+
   /**
    * Create the merchant's first (or next) plan from a few essentials; everything
    * else gets sensible, lint-clean defaults. The config is linted before storing
    * — a misconfigured plan (e.g. floor ≥ target) is rejected with the reasons.
    */
-  async createPlan(
-    merchantId: string,
-    input: {
-      productName: string;
-      listPrice: number;
-      floorPrice: number;
-      targetPrice?: number;
-      currency?: string;
-      personaStyle?: Persona["style"];
-    },
-  ): Promise<Plan> {
+  async createPlan(merchantId: string, input: PlanInput): Promise<Plan> {
+    return this.store.createPlan(this.assemblePlan(merchantId, input));
+  }
+
+  /**
+   * Build a complete, lint-clean Plan from a few essentials. Pure assembly +
+   * validation — does NOT touch the store, so signup can lint a plan before
+   * creating any account (an invalid plan creates nothing). Throws bad_request
+   * with the reasons on a misconfigured plan (e.g. floor ≥ list).
+   *
+   * The bouncer opens at the merchant's list price (anchor = list) and negotiates
+   * down toward a target (defaulting to the floor↔list midpoint), never below the
+   * floor — so the demo reflects exactly the price the merchant set.
+   */
+  private assemblePlan(merchantId: string, input: PlanInput): Plan {
     const productName = input.productName?.trim();
     if (!productName) throw new ServiceError("bad_request", "a product name is required");
     const listPrice = num(input.listPrice);
@@ -230,13 +260,8 @@ export class BouncrService {
     if (listPrice === null || floorPrice === null) {
       throw new ServiceError("bad_request", "listPrice and floorPrice are required numbers");
     }
-    // The bouncer OPENS at the merchant's list price (anchor = list) and
-    // negotiates down toward a target, never below the floor. So the demo
-    // reflects exactly the price the merchant set. Target defaults to the
-    // midpoint between floor and list.
     const targetPrice =
       input.targetPrice != null ? num(input.targetPrice)! : round2((listPrice + floorPrice) / 2);
-
     const config: Config = {
       listPrice,
       floorPrice,
@@ -253,18 +278,13 @@ export class BouncrService {
     if (!lint.ok) throw new ServiceError("bad_request", `plan config invalid: ${lint.errors.join("; ")}`);
 
     const id = `plan_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
-    return this.store.createPlan({
+    return {
       id,
       merchantId,
       planKey: id, // the embed references the unique id; no cross-merchant key collisions
       currency: (input.currency ?? "usd").toLowerCase(),
       config,
-      persona: {
-        name: "Vini", // the bouncer is always Vini — not user-changeable
-        productName,
-        style: input.personaStyle ?? "sassy",
-        roastLevel: 2,
-      },
+      persona: { name: "Vini", productName, style: input.personaStyle ?? "sassy", roastLevel: 2 },
       policy,
       usage: {
         bandCeiling: 1000,
@@ -279,7 +299,7 @@ export class BouncrService {
       version: 1,
       active: true,
       applicationFeePercent: null, // inherits the platform take-rate
-    });
+    };
   }
 
   /**

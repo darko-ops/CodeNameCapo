@@ -122,12 +122,41 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
       return c.json({ error: "too many signups, try again later", code: "conflict" }, 429);
     }
     const body = await safeJson(c);
-    const { merchant, key } = await service.signupMerchant({ name: str(body.name) ?? "", email: str(body.email) });
+    // Optionally create the first plan in the SAME call so nothing is persisted
+    // until the user finishes onboarding (account isn't "fulfilled" until the end).
+    const pb = isRecord(body.plan) ? body.plan : null;
+    const planInput = pb
+      ? {
+          productName: str(pb.product_name) ?? "",
+          listPrice: num(pb.list_price) ?? NaN,
+          floorPrice: num(pb.floor_price) ?? NaN,
+          ...(num(pb.target_price) !== null ? { targetPrice: num(pb.target_price)! } : {}),
+          ...(str(pb.currency) ? { currency: str(pb.currency)! } : {}),
+          ...(personaStyle(pb.persona_style) ? { personaStyle: personaStyle(pb.persona_style)! } : {}),
+        }
+      : undefined;
+    const { merchant, key, plan } = await service.signupMerchant({
+      name: str(body.name) ?? "",
+      email: str(body.email),
+      ...(planInput ? { plan: planInput } : {}),
+    });
     const { token, expiresAt } = signSession(merchant.id, deps.authSecret, DASHBOARD_TTL_MS, Date.now());
     return c.json(
-      { merchant: { id: merchant.id, name: merchant.name }, key, token, expires_at: expiresAt },
+      {
+        merchant: { id: merchant.id, name: merchant.name },
+        key,
+        token,
+        expires_at: expiresAt,
+        ...(plan ? { plan: planJson(plan), embed: embedInfo(baseFromReq(c), plan.id) } : {}),
+      },
       201,
     );
+  });
+
+  // Permanently delete the authenticated merchant account (and everything under it).
+  app.delete("/v1/account", dashboardAuth, async (c) => {
+    await service.deleteAccount(c.get("merchantId"));
+    return c.json({ ok: true });
   });
 
   // Plans: create / list — dashboard token, scoped to the merchant.

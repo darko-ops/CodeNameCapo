@@ -84,6 +84,21 @@ export class PostgresStore implements Store {
     return mapMerchant(rows[0]);
   }
 
+  async deleteMerchant(id: string): Promise<void> {
+    // FK-safe cascade, in one transaction: usage → deals → turns → sessions →
+    // cooldowns → plans → merchant.
+    await this.sql.begin(async (sql) => {
+      await sql`delete from bouncr.usage_cycles where deal_id in (select id from bouncr.deals where merchant_id = ${id})`;
+      await sql`delete from bouncr.deals where merchant_id = ${id}`;
+      await sql`delete from bouncr.turns where session_id in (
+        select s.id from bouncr.sessions s join bouncr.plans p on s.plan_id = p.id where p.merchant_id = ${id})`;
+      await sql`delete from bouncr.sessions where plan_id in (select id from bouncr.plans where merchant_id = ${id})`;
+      await sql`delete from bouncr.cooldowns where plan_id in (select id from bouncr.plans where merchant_id = ${id})`;
+      await sql`delete from bouncr.plans where merchant_id = ${id}`;
+      await sql`delete from bouncr.merchants where id = ${id}`;
+    });
+  }
+
   async getPlan(ref: string): Promise<Plan | null> {
     // Resolve by internal id OR public plan_key (widgets use the friendly key). Active only.
     const rows = await this.sql`

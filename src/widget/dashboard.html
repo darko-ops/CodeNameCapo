@@ -20,8 +20,9 @@
   #edit-form label { display: block; font-size: 11px; color: var(--muted); margin: 8px 0 4px; }
   #edit-form input, #edit-form select { width: 100%; max-width: none; cursor: text; }
   #edit-form select { cursor: pointer; }
-  .keybox { background: #0d0d13; border: 1px solid rgba(124,58,237,.4); border-radius: 11px; padding: 14px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; word-break: break-all; position: relative; }
-  .keybox .copy { position: absolute; top: 8px; right: 8px; padding: 5px 10px; font-size: 12px; }
+  .keybox { background: #0d0d13; border: 1px solid rgba(124,58,237,.4); border-radius: 11px; padding: 14px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+  .keybox .keyval { word-break: break-all; line-height: 1.55; }
+  .keybox .copy { margin-top: 12px; padding: 5px 14px; font-size: 12px; }
   .warn { font-size: 12.5px; color: var(--accent2); margin-top: 8px; }
   input::placeholder { color: #5a5a6a; }
   button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
@@ -98,12 +99,18 @@
   </div>
 
   <details class="panel" id="account-panel">
-    <summary style="cursor:pointer; font-weight:600; font-size:15px">Account &amp; API key</summary>
+    <summary style="cursor:pointer; font-weight:600; font-size:15px">Account &amp; settings</summary>
     <div style="margin-top:12px">
-      <p class="meta" style="margin:0 0 12px">Your API key is your dashboard login. Rotate it if it may be exposed — the old key stops working immediately. Your current session stays signed in.</p>
+      <p class="meta" style="margin:0 0 12px">Your API key is your dashboard login. Rotate it if it may be exposed, the old key stops working immediately. Your current session stays signed in.</p>
       <button class="ghost" id="rotate-btn">Rotate API key</button>
-      <div class="keybox" id="newkey-box" style="display:none; margin-top:14px"><button class="ghost copy" id="copy-newkey" type="button">Copy</button><span id="newkey-val"></span></div>
-      <div class="warn" id="rotate-warn" style="display:none">⚠ Save this now — it's shown once, and your old key no longer works.</div>
+      <div class="keybox" id="newkey-box" style="display:none; margin-top:14px"><span class="keyval" id="newkey-val"></span><button class="ghost copy" id="copy-newkey" type="button">Copy</button></div>
+      <div class="warn" id="rotate-warn" style="display:none">⚠ Save this now, it's shown once and your old key no longer works.</div>
+
+      <hr style="border:0; border-top:1px solid var(--line); margin:20px 0 14px" />
+      <p class="meta" style="margin:0 0 6px; color:var(--err); font-weight:700">Danger zone</p>
+      <p class="meta" style="margin:0 0 12px">Permanently delete this account and everything under it (plans, negotiations, deals). This cannot be undone.</p>
+      <button class="ghost" id="delete-btn" style="color:var(--err); border-color:rgba(248,113,113,.45)">Delete account</button>
+      <span class="meta" id="delete-status"></span>
     </div>
   </details>
 
@@ -208,6 +215,21 @@
     } catch (err) { $("login-status").innerHTML = '<span class="err">' + err.message + "</span>"; }
   });
   $("logout").onclick = logout;
+
+  // Delete account — permanent, double-confirmed, then drops back to the gate.
+  $("delete-btn").onclick = async () => {
+    if (!confirm("Permanently delete this account and ALL plans, negotiations, and data? This cannot be undone.")) return;
+    if ((prompt('Type "DELETE" to confirm.') || "").trim().toUpperCase() !== "DELETE") return;
+    $("delete-btn").disabled = true; $("delete-status").textContent = "deleting…";
+    try {
+      const r = guard(await fetch(base() + "/v1/account", { method: "DELETE", headers: authHeaders() }));
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "could not delete account");
+      logout();
+      alert("Your account has been deleted.");
+    } catch (e) { $("delete-status").textContent = ""; alert(e.message); }
+    finally { $("delete-btn").disabled = false; }
+  };
 
   // Rotate the merchant API key — shows the new one once; old key dies immediately.
   $("rotate-btn").onclick = async () => {
