@@ -149,6 +149,10 @@
   .install { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
   pre { margin: 0; background: #0d0d13; border: 1px solid var(--line); border-radius: 14px; padding: 20px; overflow-x: auto; font-size: 13.5px; line-height: 1.7; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
   pre .tok-tag { color: #ff7b9c; } pre .tok-attr { color: var(--accent2); } pre .tok-str { color: var(--hi); } pre .tok-com { color: #5a5a6a; }
+  .snip { margin-bottom: 16px; }
+  .snip-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  .snip-copy { background: transparent; border: 1px solid var(--line); color: var(--accent2); border-radius: 7px; padding: 3px 11px; font-size: 12px; cursor: pointer; font-family: inherit; transition: .15s; }
+  .snip-copy:hover { border-color: var(--accent); }
   .steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
   .steps li { display: flex; gap: 14px; align-items: flex-start; }
   .steps .n { flex: 0 0 28px; height: 28px; border-radius: 8px; background: rgba(124,58,237,.14); color: var(--accent2); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
@@ -312,6 +316,30 @@
   </div>
 </section>
 
+<section class="band" id="agents">
+  <div class="wrap" style="max-width:760px">
+    <div class="kicker">For agents</div>
+    <h2>Connect your agent in one line.</h2>
+    <p class="sub">Bouncr speaks MCP. Point any agent at the endpoint and it gets four negotiation tools — and the same policy engine, so it still can't talk the price below your floor.</p>
+
+    <div class="snip">
+      <div class="snip-head">Claude Code <button class="snip-copy" data-copy="snip-claude" type="button">copy</button></div>
+      <pre id="snip-claude">claude mcp add --transport http bouncr https://thebouncr.com/mcp</pre>
+    </div>
+
+    <div class="snip">
+      <div class="snip-head">Cursor &middot; <code style="font-size:12px">.cursor/mcp.json</code> (and most MCP clients) <button class="snip-copy" data-copy="snip-json" type="button">copy</button></div>
+<pre id="snip-json">{
+  <span class="tok-attr">"mcpServers"</span>: {
+    <span class="tok-attr">"bouncr"</span>: { <span class="tok-attr">"url"</span>: <span class="tok-str">"https://thebouncr.com/mcp"</span> }
+  }
+}</pre>
+    </div>
+
+    <p class="note" style="font-size:13px; color:var(--muted)">Claude Desktop: add it as a custom connector (Settings → Connectors) pointing at the same URL. Any MCP-capable client works — it's a standard Streamable HTTP server.</p>
+  </div>
+</section>
+
 <section class="final">
   <div class="wrap">
     <div class="box">
@@ -353,6 +381,16 @@
       // keep them on the page — the widget already shows the deal screen
       try { window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 80, behavior: "smooth" }); } catch (e) {}
     },
+  });
+
+  // Copy buttons on the "connect your agent" snippets.
+  document.querySelectorAll(".snip-copy").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var el = document.getElementById(b.dataset.copy);
+      if (el && navigator.clipboard) navigator.clipboard.writeText(el.textContent.trim());
+      var t = b.textContent; b.textContent = "copied ✓";
+      setTimeout(function () { b.textContent = t; }, 1200);
+    });
   });
 
   // Early-access: the button becomes an inline email box — type it, hit enter,
