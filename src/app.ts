@@ -240,6 +240,22 @@ export function buildApp(deps: AppDeps): Hono {
     return c.json({ ...(r.checkoutUrl ? { checkout_url: r.checkoutUrl } : {}), deal_id: r.dealId, price: r.price });
   });
 
+  // --- early-access waitlist (landing page) --------------------------------
+  // Public + keyless (the landing page posts directly). IP-rate-limited so it
+  // can't be scripted. Logged as well as stored, so signups are recoverable from
+  // the platform logs even before a durable DATABASE_URL is configured.
+  app.post("/v1/waitlist", async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 10 }])) {
+      return c.json({ ok: true }); // silently absorb floods — never reveal a limit
+    }
+    const body = await safeJson(c);
+    const email = str(body.email);
+    if (!email) return c.json({ error: "email is required" }, 400);
+    await service.joinWaitlist(email, str(body.source) ?? "landing");
+    console.log(`[waitlist] ${email.trim().toLowerCase()} (${str(body.source) ?? "landing"})`);
+    return c.json({ ok: true });
+  });
+
   // --- settlement -----------------------------------------------------------
 
   app.post("/v1/webhooks/stripe", async (c) => {

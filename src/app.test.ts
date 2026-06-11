@@ -188,6 +188,26 @@ describe("invisible rate limiting", () => {
   });
 });
 
+describe("early-access waitlist (Spec §15)", () => {
+  it("accepts a valid email (keyless), rejects a malformed one, and records it", async () => {
+    const { app, store } = makeApp();
+    const ok = await post(app, "/v1/waitlist", { email: "Founder@Example.com", source: "thebouncr.com" });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).ok).toBe(true);
+
+    const bad = await post(app, "/v1/waitlist", { email: "not-an-email" });
+    expect(bad.status).toBe(400);
+
+    const missing = await post(app, "/v1/waitlist", {});
+    expect(missing.status).toBe(400);
+
+    // Stored on the append-only event log, normalized (lowercased).
+    const signups = store.allEvents().filter((e) => e.type === "waitlist.signup");
+    expect(signups).toHaveLength(1);
+    expect((signups[0]!.payload as any).email).toBe("founder@example.com");
+  });
+});
+
 describe("landing page host routing (thebouncr.com)", () => {
   it("serves the landing on thebouncr.com and the playground elsewhere", async () => {
     const { app } = makeApp();

@@ -139,6 +139,20 @@ export class BouncrService {
     return { sessionId: session.id, sessionToken: session.sessionToken, opener, expiresAt };
   }
 
+  /**
+   * Early-access waitlist signup (landing page). Rides on the append-only event
+   * log, so it's durable wherever the store is (Postgres in prod); query later
+   * with `select payload->>'email' from bouncr.events where type='waitlist.signup'`.
+   * Normalizes + validates the email; throws bad_request on a malformed one.
+   */
+  async joinWaitlist(email: string, source?: string): Promise<void> {
+    const e = email.trim().toLowerCase();
+    if (e.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
+      throw new ServiceError("bad_request", "a valid email is required");
+    }
+    await this.store.appendEvent("waitlist.signup", { email: e, source: source ?? null, at: this.now() });
+  }
+
   /** Verify a widget session token. Throws unauthorized on mismatch (Spec §9, §12). */
   async verifySessionToken(sessionId: string, token: string | undefined): Promise<void> {
     const session = await this.store.getSession(sessionId);
