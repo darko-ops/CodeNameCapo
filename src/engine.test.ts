@@ -130,16 +130,29 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, null, CFG, 0, { reasoning: "none" }).type).toBe("hold");
   });
 
-  it("never haggles a reasoned offer DOWN below the user's own number", () => {
+  it("meets a reasoned offer with a conversational handshake, never below it", () => {
     // Reproduces the live bug: late in the haggle the concession curve has
     // decayed below the user's offer, so the old split-the-difference proposed
     // LESS than they offered ($44 ask, user offers $40 + word of mouth → it
     // countered to ~$30). With genuine reasoning and an offer above what that
-    // reasoning could even unlock, take their number — don't discount past it.
+    // reasoning could even unlock, come DOWN to meet their number — and do it
+    // conversationally (agreed handshake), not an instant close.
     const s: SessionState = { round: 4, currentAsk: 44, openedAt: 0, history: [] };
     const a = decide(s, 40, CFG, 0, { reasoning: "moderate" }); // moderate rf=15
-    expect(a.type).toBe("accept");
-    if (a.type === "accept") expect(a.amount).toBe(40); // closes AT their offer
+    expect(a.type).toBe("counter");
+    if (a.type === "counter") {
+      expect(a.amount).toBe(40); // settles AT their offer, never below
+      expect(a.agreed).toBe(true); // a handshake, not a fresh haggle counter
+      expect(a.isFinal).toBe(false);
+    }
+  });
+
+  it("confirming the agreed price (offer == current ask) then closes the deal", () => {
+    // After the handshake the ask is the user's number; restating/meeting it
+    // closes via the acceptThreshold rule.
+    const s: SessionState = { round: 5, currentAsk: 40, openedAt: 0, history: [] };
+    const a = decide(s, 40, CFG, 0, { reasoning: "moderate" });
+    expect(a).toEqual({ type: "accept", amount: 40 });
   });
 
   it("a reasoned counter never asks for less than the user already offered", () => {

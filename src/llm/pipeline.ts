@@ -60,8 +60,15 @@ export async function runTurn(ctx: TurnContext): Promise<TurnResult> {
   // 2. Decide — deterministically. Abuse/social-engineering never carry a price
   //    into the engine, and abuse ends the negotiation (Spec §12).
   const isHostile = extraction.intent === "abuse";
+  // social_engineering never carries a price. An explicit "accept" ("deal",
+  // "yes ok") with no number means they're taking the price on the table — close
+  // it at the standing ask (this seals an agreed handshake from the prior turn).
   const offer =
-    extraction.intent === "social_engineering" ? null : extraction.offer_amount;
+    extraction.intent === "social_engineering"
+      ? null
+      : extraction.intent === "accept" && extraction.offer_amount === null
+        ? state.currentAsk
+        : extraction.offer_amount;
   // How much the price moves is gated by how strong a case the user made: bare
   // numbers (none) barely move; stronger reasoning unlocks a lower price (§ tiers).
   const action: Action = isHostile

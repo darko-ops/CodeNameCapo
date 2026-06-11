@@ -64,8 +64,13 @@ export interface SessionState {
 
 export type Action =
   | { type: "accept"; amount: number }
-  /** A new, lower ask. `isFinal` marks the last offer before the door closes. */
-  | { type: "counter"; amount: number; isFinal: boolean }
+  /**
+   * A new, lower ask. `isFinal` marks the last offer before the door closes.
+   * `agreed` marks a handshake: the engine came DOWN to meet the user's own
+   * reasoned offer, so the price is settled but the deal isn't closed yet — the
+   * conversation continues and the user confirms to seal it (then it accepts).
+   */
+  | { type: "counter"; amount: number; isFinal: boolean; agreed?: boolean }
   /** Repeat the standing ask (user asked a question / stalled — no number given). */
   | { type: "hold"; amount: number }
   /** Engine ends it (expiry, or rounds exhausted with no agreement). */
@@ -194,18 +199,22 @@ export function decide(
   }
 
   // They named a price WITH genuine reasoning, and it's already at/above the
-  // lowest that reasoning could ever talk us down to. Take it — never haggle a
-  // user DOWN below their own offer (the curve may have decayed past their
-  // number; splitting against it would hand them a discount they didn't ask
-  // for). Only fires when reasoning is explicitly supplied and not "none", so
-  // bare number-spitting still falls through to the no-case branch and holds.
+  // lowest that reasoning could ever talk us down to. Come DOWN to meet their
+  // number — never haggle a user below their own offer (the curve may have
+  // decayed past it; splitting against it would hand them a discount they didn't
+  // ask for). This is a CONVERSATIONAL handshake, not an auto-close: the ask
+  // drops to their price and the bouncer agrees on it, but the deal seals only
+  // when they confirm (then `u >= currentAsk` closes via the rule above). Only
+  // fires when reasoning is explicitly supplied and not "none", so bare
+  // number-spitting still falls through to the no-case branch and holds.
   if (
     opts.reasoning &&
     opts.reasoning !== "none" &&
     u >= reachableFloor(tier, c) &&
-    u >= c.floorPrice
+    u >= c.floorPrice &&
+    u < s.currentAsk // (>= currentAsk already closed via the acceptThreshold rule)
   ) {
-    return accept(Math.min(u, s.currentAsk), c);
+    return { type: "counter", amount: round2(u), isFinal: false, agreed: true };
   }
 
   // --- No reasoning => small goodwill room, then hold ----------------------

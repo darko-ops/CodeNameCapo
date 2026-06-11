@@ -21,6 +21,8 @@ function decisionLine(action: Action, extraction: Extraction): string {
     case "accept":
       return `DECISION: ACCEPT. The deal closes at $${fmt(action.amount)}/mo. Congratulate them and make it feel earned.`;
     case "counter":
+      if (action.agreed)
+        return `DECISION: AGREE on $${fmt(action.amount)}/mo — their case is fair and their number works for you. Warmly agree on $${fmt(action.amount)}, acknowledge what won you over (the word of mouth / commitment / fair point), and toss it back so they can confirm. This is a HANDSHAKE on the price, not the close — do NOT say "welcome in", "sold", "done deal", or act like they're already a member. Nothing's locked until they say yes; invite them to lock it in.`;
       return action.isFinal
         ? `DECISION: FINAL OFFER $${fmt(action.amount)}/mo. You went to bat for them one last time — say you fought your boss/the suits and $${fmt(action.amount)} is absolutely the best you can do, take it or leave it before the door closes.`
         : `DECISION: COUNTER at $${fmt(action.amount)}/mo. Play it like a pawn-shop haggle: act like you just went and checked with the higher-ups, came back, and $${fmt(action.amount)} is genuinely the best you can do. Hold firm, don't sound desperate.`;
@@ -133,6 +135,8 @@ export function template(action: Action, persona: Persona): string {
     case "accept":
       return `Deal — $${fmt(action.amount)}/mo. You drove a hard bargain. Welcome in.`;
     case "counter":
+      if (action.agreed)
+        return `$${fmt(action.amount)}/mo works for me — you made a fair case. say the word and i'll lock it in.`;
       return action.isFinal
         ? `Last call: $${fmt(action.amount)}/mo. That's the number — take it before the door closes.`
         : `I can do $${fmt(action.amount)}/mo. That's me moving, not you. Your turn.`;
