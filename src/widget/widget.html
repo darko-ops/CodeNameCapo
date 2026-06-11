@@ -6,10 +6,11 @@
 <title>Bouncr</title>
 <style>
   :root {
-    --accent: #7C3AED;
-    --bg: #0e0e12;
-    --panel: #16161d;
-    --bubble-bot: #1f1f29;
+    --accent: #7C3AED;     /* electric violet — the persona color */
+    --mint: #34D399;       /* deal mint — used ONLY on the deal-reached screen */
+    --bg: #0B0B12;         /* noir — near-black with a violet tint */
+    --panel: #14141c;
+    --bubble-bot: #1d1d27;
     --bubble-user: var(--accent);
     --text: #ECECF1;
     --muted: #8a8a99;
@@ -75,6 +76,12 @@
     background: var(--accent); color: #fff; border: 0; border-radius: 12px;
     padding: 13px 26px; font-size: 16px; font-weight: 700; cursor: pointer; text-decoration: none;
   }
+  /* DEAL MINT — the win. Mint appears nowhere else in the product but here, the
+     moment a deal is reached; the scarcity is what makes the win feel earned. */
+  #deal-screen { background: radial-gradient(130% 90% at 50% -10%, rgba(52,211,153,.16), var(--bg) 58%); }
+  #deal-screen .deal-price { color: var(--mint); text-shadow: 0 0 46px rgba(52,211,153,.5); animation: dealpop .5s cubic-bezier(.2,.9,.3,1.2); }
+  #deal-screen .deal-cta { background: var(--mint); color: #04241a; }
+  @keyframes dealpop { 0% { transform: scale(.82); opacity: 0 } 60% { transform: scale(1.06) } 100% { transform: scale(1); opacity: 1 } }
   .mark { position: absolute; bottom: 14px; font-size: 11px; color: var(--muted); letter-spacing: .3px; }
   .mark b { color: var(--accent); }
   a.fallback { color: var(--accent); }

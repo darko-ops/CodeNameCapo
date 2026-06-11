@@ -12,16 +12,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #0b0b0f;
-    --bg2: #111118;
-    --panel: #16161f;
+    --bg: #0B0B12;       /* noir — near-black, violet-tinted, never pure white */
+    --bg2: #101019;
+    --panel: #15151f;
     --line: #23232e;
     --text: #ECECF1;
     --muted: #8b8b99;
-    --accent: #7C3AED;
+    --accent: #7C3AED;   /* electric violet — the persona / brand color */
     --accent2: #a78bfa;
-    --gold: #e8b75a;
-    --ok: #34d399;
+    --hi: #C4B5FD;       /* light-violet highlight (premium sheen, on-palette) */
+    /* deal mint (#34D399) is reserved for the deal-reached moment — it lives in
+       the embedded widget, NOT in the landing chrome. No green out here. */
     --maxw: 1080px;
   }
   * { box-sizing: border-box; }
@@ -34,7 +35,7 @@
   a { color: inherit; text-decoration: none; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
   .accent { color: var(--accent2); }
-  .gold { color: var(--gold); }
+  .hi { color: var(--hi); }
 
   /* glow backdrop */
   .glow { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
@@ -75,7 +76,7 @@
     background: rgba(124,58,237,0.06);
   }
   h1 { font-size: clamp(40px, 6vw, 66px); line-height: 1.02; letter-spacing: -2px; margin: 0 0 20px; font-weight: 700; }
-  h1 em { font-style: normal; background: linear-gradient(120deg, var(--accent2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  h1 em { font-style: normal; background: linear-gradient(120deg, var(--accent), var(--hi)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .lede { font-size: 18.5px; color: var(--muted); max-width: 30em; margin: 0 0 28px; }
   .lede b { color: var(--text); font-weight: 600; }
   .cta-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
@@ -89,7 +90,7 @@
   .demo-head { display: flex; align-items: center; gap: 9px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #13131b; }
   .demo-head .lights { display: flex; gap: 6px; }
   .demo-head .lights i { width: 11px; height: 11px; border-radius: 50%; display: block; }
-  .demo-head .lights i:nth-child(1){ background:#ff5f57 } .demo-head .lights i:nth-child(2){ background:#febc2e } .demo-head .lights i:nth-child(3){ background:#28c840 }
+  .demo-head .lights i { background:#34343f } /* neutral window chrome — keep green out, mint is for the close only */
   .demo-head .url { margin-left: 8px; font-size: 12.5px; color: var(--muted); }
   #demo { height: 540px; }
   #demo iframe { border: 0 !important; }
@@ -117,7 +118,7 @@
   .quote span { color: var(--muted); font-size: 14px; display: block; margin-top: 10px; }
 
   .jail { text-align: center; max-width: 760px; margin: 0 auto; }
-  .jail .pill { display: inline-block; font-size: 12.5px; color: var(--ok); border: 1px solid rgba(52,211,153,.3); background: rgba(52,211,153,.07); border-radius: 999px; padding: 5px 13px; margin-bottom: 20px; }
+  .jail .pill { display: inline-block; font-size: 12.5px; color: var(--accent2); border: 1px solid rgba(124,58,237,.32); background: rgba(124,58,237,.08); border-radius: 999px; padding: 5px 13px; margin-bottom: 20px; }
   .flow { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 28px; font-size: 13.5px; }
   .flow .node { border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; background: var(--panel); }
   .flow .node.eng { border-color: var(--accent); color: var(--accent2); }
@@ -126,7 +127,7 @@
   /* install */
   .install { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
   pre { margin: 0; background: #0d0d13; border: 1px solid var(--line); border-radius: 14px; padding: 20px; overflow-x: auto; font-size: 13.5px; line-height: 1.7; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  pre .tok-tag { color: #ff7b9c; } pre .tok-attr { color: var(--accent2); } pre .tok-str { color: var(--gold); } pre .tok-com { color: #5a5a6a; }
+  pre .tok-tag { color: #ff7b9c; } pre .tok-attr { color: var(--accent2); } pre .tok-str { color: var(--hi); } pre .tok-com { color: #5a5a6a; }
   .steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
   .steps li { display: flex; gap: 14px; align-items: flex-start; }
   .steps .n { flex: 0 0 28px; height: 28px; border-radius: 8px; background: rgba(124,58,237,.14); color: var(--accent2); display: grid; place-items: center; font-weight: 700; font-size: 14px; }

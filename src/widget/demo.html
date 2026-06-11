@@ -5,17 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Bouncr — playground</title>
 <style>
-  body { margin: 0; font: 16px/1.5 ui-sans-serif, system-ui, sans-serif; color: #1a1a1f; background: #faf9f6; }
+  body { margin: 0; font: 16px/1.5 ui-sans-serif, system-ui, sans-serif; color: #ECECF1; background: #0B0B12; }
   .wrap { max-width: 720px; margin: 0 auto; padding: 56px 24px; }
   h1 { font-size: 34px; letter-spacing: -0.5px; margin: 0 0 8px; }
-  p.lede { color: #555; font-size: 18px; margin: 0 0 28px; }
-  .card { border: 1px solid #e6e3da; border-radius: 16px; padding: 22px; background: #fff; }
+  p.lede { color: #8b8b99; font-size: 18px; margin: 0 0 28px; }
+  .card { border: 1px solid #23232e; border-radius: 16px; padding: 22px; background: #15151f; }
   .price { font-size: 40px; font-weight: 800; margin: 4px 0 2px; }
-  .price s { color: #aaa; font-weight: 400; font-size: 22px; }
+  .price s { color: #5a5a6a; font-weight: 400; font-size: 22px; }
   button.cta { margin-top: 14px; background: #7C3AED; color: #fff; border: 0; border-radius: 10px; padding: 12px 22px; font-size: 16px; font-weight: 700; cursor: pointer; }
-  #banner { display: none; margin: 18px 0 0; padding: 14px 16px; border-radius: 12px; background: #ecfdf3; color: #065f46; border: 1px solid #a7f3d0; }
-  #panel { margin-top: 28px; height: 560px; max-height: 70vh; border: 1px solid #e6e3da; border-radius: 16px; overflow: hidden; }
-  code { background: #f1efe9; padding: 2px 6px; border-radius: 5px; font-size: 14px; }
+  /* deal banner = the mint moment; walk banner gets a neutral rose (set in JS) */
+  #banner { display: none; margin: 18px 0 0; padding: 14px 16px; border-radius: 12px; background: rgba(52,211,153,.1); color: #34D399; border: 1px solid rgba(52,211,153,.35); }
+  #banner code { background: rgba(52,211,153,.14); color: inherit; }
+  #panel { margin-top: 28px; height: 560px; max-height: 70vh; border: 1px solid #23232e; border-radius: 16px; overflow: hidden; }
+  code { background: #1d1d27; color: #c4b5fd; padding: 2px 6px; border-radius: 5px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -32,7 +34,7 @@
 
     <div id="panel"></div>
 
-    <p style="margin-top:28px;color:#777;font-size:14px">
+    <p style="margin-top:28px;color:#8b8b99;font-size:14px">
       Embed this anywhere with one tag: <code>&lt;script src="/embed.js" data-plan="pro_monthly"&gt;&lt;/script&gt;</code>
     </p>
   </div>
@@ -57,7 +59,7 @@
         onWalkaway: function () {
           var b = document.getElementById("banner");
           b.style.display = "block";
-          b.style.background = "#fef2f2"; b.style.color = "#991b1b"; b.style.borderColor = "#fecaca";
+          b.style.background = "rgba(248,113,113,.1)"; b.style.color = "#f87171"; b.style.borderColor = "rgba(248,113,113,.35)";
           b.textContent = "Vinny walked. Standard pricing it is.";
         },
       });

@@ -55,7 +55,7 @@
     iframe.src = buildUrl(opts);
     iframe.title = "Bouncr negotiation";
     iframe.allow = "clipboard-write";
-    iframe.style.cssText = "width:100%;height:100%;border:0;display:block;background:#0e0e12";
+    iframe.style.cssText = "width:100%;height:100%;border:0;display:block;background:#0B0B12";
     iframe.setAttribute("loading", "lazy");
     host.appendChild(iframe);
 
