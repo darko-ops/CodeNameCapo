@@ -90,6 +90,7 @@ export class PostgresStore implements Store {
       usage: r.usage_jsonb as UsagePolicy,
       version: r.version,
       active: r.active,
+      applicationFeePercent: r.application_fee_percent == null ? null : Number(r.application_fee_percent),
     };
   }
 

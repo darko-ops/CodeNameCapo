@@ -65,6 +65,12 @@ export interface Plan {
   /** Versioned (Spec §8): a deal records the config version it closed under. */
   version: number;
   active: boolean;
+  /**
+   * Per-plan Bouncr take-rate (% of each settled invoice, 0–100). Overrides the
+   * platform default when set; null/undefined falls back to it. Lets pricing
+   * tiers carry different rates (e.g. Self-serve 20% vs Growth 15%).
+   */
+  applicationFeePercent?: number | null;
 }
 
 export interface SessionRecord {

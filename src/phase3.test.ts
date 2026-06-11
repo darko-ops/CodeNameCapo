@@ -9,10 +9,11 @@ import type { WebhookEvent } from "./stripe/gateway.js";
 
 function setup(
   planOverrides: Partial<ReturnType<typeof demoPlan>["policy"]> = {},
-  opts: { applicationFeePercent?: number } = {},
+  opts: { applicationFeePercent?: number; planFeePercent?: number | null } = {},
 ) {
   const plan = demoPlan();
   plan.policy = { ...plan.policy, ...planOverrides };
+  if (opts.planFeePercent !== undefined) plan.applicationFeePercent = opts.planFeePercent;
   const store = new MemoryStore([plan], [demoMerchant()]);
   const stripe = new FakeStripeGateway();
   const service = new BouncrService({
@@ -133,6 +134,31 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     s = await tooHigh.service.createSession({ planId: tooHigh.plan.id, endUserRef: "b" });
     await tooHigh.service.acceptCurrent(s.sessionId);
     expect(tooHigh.stripe.checkouts.at(-1)!.applicationFeePercent).toBe(100); // clamped
+  });
+
+  it("a per-plan rate overrides the platform default", async () => {
+    // platform default 20%, but this plan's tier is 15% → the plan wins.
+    const { plan, stripe, service } = setup({}, { applicationFeePercent: 20, planFeePercent: 15 });
+    await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "b" });
+    await service.acceptCurrent(sessionId);
+    expect(stripe.checkouts.at(-1)!.applicationFeePercent).toBe(15);
+  });
+
+  it("a per-plan rate works even with no platform default set", async () => {
+    const { plan, stripe, service } = setup({}, { planFeePercent: 12 });
+    await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "b" });
+    await service.acceptCurrent(sessionId);
+    expect(stripe.checkouts.at(-1)!.applicationFeePercent).toBe(12);
+  });
+
+  it("a per-plan rate of 0 opts that plan OUT of the platform fee", async () => {
+    const { plan, stripe, service } = setup({}, { applicationFeePercent: 20, planFeePercent: 0 });
+    await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "b" });
+    await service.acceptCurrent(sessionId);
+    expect(stripe.checkouts.at(-1)!.applicationFeePercent).toBeNull(); // 0 → no fee
   });
 
   it("keeps the fee applied through a renegotiation reprice", async () => {

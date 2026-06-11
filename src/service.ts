@@ -96,6 +96,13 @@ export class BouncrService {
     this.applicationFeePercent = Number.isFinite(fee) ? Math.max(0, Math.min(100, fee)) : 0;
   }
 
+  /** Effective take-rate for a plan: its per-plan override if set, else the
+   *  platform default. Clamped to [0, 100]. */
+  private feeFor(plan: Plan): number {
+    const raw = plan.applicationFeePercent ?? this.applicationFeePercent;
+    return Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0;
+  }
+
   // --- Session lifecycle ----------------------------------------------------
 
   async createSession(
@@ -543,7 +550,7 @@ export class BouncrService {
         amount,
         currency: plan.currency,
         connectedAccountId,
-        applicationFeePercent: connectedAccountId && this.applicationFeePercent > 0 ? this.applicationFeePercent : null,
+        applicationFeePercent: connectedAccountId && this.feeFor(plan) > 0 ? this.feeFor(plan) : null,
       });
     }
 
@@ -612,7 +619,7 @@ export class BouncrService {
       endUserRef: session.endUserRef,
       dealId: deal.id,
       connectedAccountId,
-      applicationFeePercent: connectedAccountId && this.applicationFeePercent > 0 ? this.applicationFeePercent : null,
+      applicationFeePercent: connectedAccountId && this.feeFor(plan) > 0 ? this.feeFor(plan) : null,
       successUrl: `${this.baseUrl}/return?status=success&deal=${deal.id}`,
       cancelUrl: `${this.baseUrl}/return?status=cancel&deal=${deal.id}`,
     });

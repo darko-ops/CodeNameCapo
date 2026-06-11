@@ -27,8 +27,11 @@ create table if not exists bouncr.plans (
   policy_jsonb  jsonb not null default '{"cooldownHours":72,"maxMessages":30}',  -- NegotiationPolicy (§12)
   usage_jsonb   jsonb not null default '{"bandCeiling":1000,"breachCyclesRequired":3,"costPerUnit":0.004,"costPlusMargin":1.25,"renegAnchorMultiplier":1.7,"downwardEnabled":false,"downwardFloorRatio":0.1,"downwardMinCycles":3}',  -- UsagePolicy (§6)
   version       integer not null default 1,
-  active        boolean not null default true
+  active        boolean not null default true,
+  application_fee_percent numeric  -- per-plan Bouncr take-rate (null => platform default)
 );
+-- Idempotent add for existing deployments (the column is new).
+alter table bouncr.plans add column if not exists application_fee_percent numeric;
 create index if not exists plans_merchant_idx on bouncr.plans(merchant_id);
 
 -- Per-(plan, end_user_ref) walkaway cooldown (Spec §12).
