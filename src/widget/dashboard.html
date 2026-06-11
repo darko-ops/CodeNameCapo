@@ -93,6 +93,7 @@
     <h2>Settlement</h2>
     <div>Stripe Connect: <span id="connect-badge" class="badge no">checking…</span>
       <button class="ghost" id="connect-btn" style="margin-left:10px">Connect Stripe</button></div>
+    <div class="meta" id="connect-note" style="margin-top:8px"></div>
     <div style="margin-top:10px">Bouncr take-rate: <b id="take-rate" style="color:var(--accent)">—</b>
       <span class="meta" id="take-note"></span></div>
     <div class="lint" id="lint" style="margin-top:10px"></div>
@@ -445,10 +446,19 @@
   async function renderConnect() {
     try {
       const s = await (await api("/v1/merchants/" + encodeURIComponent(MERCHANT) + "/connect")).json();
-      const b = $("connect-badge");
+      const b = $("connect-badge"), note = $("connect-note");
+      // Honest about sandbox: if live Stripe isn't configured, NOTHING here is a
+      // real connection — say so instead of claiming "connected".
+      if (!s.live) {
+        b.className = "badge no"; b.textContent = "test mode";
+        note.textContent = "Stripe isn't live for this deployment yet. Settlement is simulated, no real money moves, and connecting is for testing only.";
+        $("connect-btn").style.display = "none";
+        return;
+      }
+      note.textContent = "";
       if (s.connected && s.charges_enabled) { b.className = "badge ok"; b.textContent = "connected · ready"; $("connect-btn").style.display = "none"; }
-      else if (s.connected) { b.className = "badge no"; b.textContent = "onboarding incomplete"; }
-      else { b.className = "badge no"; b.textContent = "not connected — deals settle to platform"; }
+      else if (s.connected) { b.className = "badge no"; b.textContent = "onboarding incomplete"; $("connect-btn").style.display = ""; }
+      else { b.className = "badge no"; b.textContent = "not connected, deals settle to platform"; $("connect-btn").style.display = ""; }
     } catch (_) {}
   }
 

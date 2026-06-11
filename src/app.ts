@@ -33,6 +33,8 @@ export interface AppDeps {
   apiKey: string | null;
   /** HMAC secret for signing dashboard session tokens. */
   authSecret: string;
+  /** True only when a real (live) Stripe gateway is configured. Sandbox/fake = false. */
+  stripeLive?: boolean;
 }
 
 /** Dashboard session lifetime. */
@@ -322,7 +324,7 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
   app.get("/v1/merchants/:id/connect", dashboardAuth, async (c) => {
     if (c.req.param("id") !== c.get("merchantId")) return c.json({ error: "not found", code: "not_found" }, 404);
     const s = await service.getConnectStatus(c.get("merchantId"));
-    return c.json({ connected: s.connected, account_id: s.accountId, charges_enabled: s.chargesEnabled });
+    return c.json({ connected: s.connected, account_id: s.accountId, charges_enabled: s.chargesEnabled, live: Boolean(deps.stripeLive) });
   });
 
   // --- widget routes (session token) ---------------------------------------
