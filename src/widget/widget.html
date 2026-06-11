@@ -277,7 +277,7 @@
           handleReply(JSON.parse(data));
         } else if (ev === "error") {
           hideTyping();
-          addMsg("bot", "Couldn't process that — " + (JSON.parse(data).error || "error"));
+          addMsg("bot", "Couldn't process that. " + (JSON.parse(data).error || "error"));
         }
       }
     }

@@ -30,6 +30,26 @@ describe("stripFormatting — plain-text texting style", () => {
   });
 });
 
+describe("no em dashes (a dead AI tell)", () => {
+  it("stripFormatting turns em/en dashes into commas", () => {
+    expect(stripFormatting("ok $40 works — say the word")).toBe("ok $40 works, say the word");
+    expect(stripFormatting("talked to my boss—best i can do is $30")).not.toMatch(/[—–]/);
+    expect(stripFormatting("nah – thats below cost")).not.toMatch(/[—–]/);
+  });
+
+  it("no fallback template uses an em or en dash", () => {
+    const actions: Action[] = [
+      { type: "accept", amount: 22 },
+      { type: "counter", amount: 30, isFinal: false },
+      { type: "counter", amount: 30, isFinal: true },
+      { type: "counter", amount: 40, isFinal: false, agreed: true },
+      { type: "hold", amount: 46 },
+      { type: "walk" },
+    ];
+    for (const a of actions) expect(template(a, PERSONA)).not.toMatch(/[—–]/);
+  });
+});
+
 describe("agreed-counter template (conversational handshake)", () => {
   it("states the price, seeks confirmation, and stays Validator-safe (no premature close)", () => {
     const action: Action = { type: "counter", amount: 40, isFinal: false, agreed: true };
