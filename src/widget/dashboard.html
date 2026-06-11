@@ -51,21 +51,34 @@
   canvas { width: 100%; max-width: 100%; }
   .err { color: var(--err); }
   .lint { font-size: 13px; } .lint .e { color: var(--err); } .lint .w { color: var(--warn); }
+  /* logged-out gate — the dashboard is blocked until you log in or sign up */
+  .gate { max-width: 440px; margin: 48px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 28px; text-align: center; }
+  .gate h2 { margin: 0 0 6px; font-size: 20px; }
+  .gate .gate-sub { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; }
+  .gate-row { display: flex; gap: 8px; }
+  .gate-row input { flex: 1; max-width: none; }
+  .gate-foot { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .gate-foot a { color: var(--accent); text-decoration: none; font-weight: 600; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Bouncr — WTP dashboard</h1>
+  <h1>Bouncr WTP dashboard</h1>
   <p class="sub">Your true demand curve, from your own negotiations.</p>
 
-  <form class="bar" id="login" autocomplete="off">
-    <input id="key" type="password" autocomplete="current-password" placeholder="merchant API key (bk_…)" size="40" />
-    <button id="login-btn" type="submit">Log in</button>
-    <span class="meta">New here? <a href="/signup" style="color:var(--accent)">Create an account →</a></span>
+  <form class="gate" id="login" autocomplete="off">
+    <h2>Sign in to your dashboard</h2>
+    <p class="gate-sub">Enter your merchant API key, or create an account to get one.</p>
+    <div class="gate-row">
+      <input id="key" type="password" autocomplete="current-password" placeholder="merchant API key (bk_…)" />
+      <button id="login-btn" type="submit">Log in</button>
+    </div>
     <span id="login-status" class="meta"></span>
+    <div class="gate-foot">New here? <a href="/signup">Create an account →</a></div>
   </form>
 
-  <div class="bar" id="authed" style="display:none">
+  <div id="app" style="display:none">
+  <div class="bar" id="authed">
     <input id="base" placeholder="API base" size="22" />
     <select id="plan" title="Your plans"></select>
     <button id="refresh">Refresh</button>
@@ -139,6 +152,7 @@
     <table><thead><tr><th>User</th><th>Status</th><th>Round</th><th>Ask</th></tr></thead>
       <tbody id="sessions"></tbody></table>
   </div>
+  </div><!-- /#app -->
 </div>
 
 <div id="drawer"><button class="ghost" onclick="document.getElementById('drawer').classList.remove('open')">Close</button>
@@ -166,13 +180,14 @@
   function showAuthed(name) {
     MERCHANT = name && name.id ? name.id : MERCHANT;
     $("who").textContent = (name && name.name) ? name.name : MERCHANT || "";
-    $("login").style.display = "none";
+    $("login").style.display = "none"; // hide the gate
+    $("app").style.display = "";       // reveal the dashboard
     $("authed").style.display = "flex";
   }
   function logout() {
     token = null; MERCHANT = null; localStorage.removeItem(TKEY);
-    $("authed").style.display = "none";
-    $("login").style.display = "flex";
+    $("app").style.display = "none";   // block the dashboard
+    $("login").style.display = "";     // show the gate (log in / sign up)
     $("key").value = "";
   }
 
