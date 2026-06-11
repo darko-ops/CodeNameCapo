@@ -62,7 +62,11 @@ export async function runTurn(ctx: TurnContext): Promise<TurnResult> {
   const isHostile = extraction.intent === "abuse";
   const offer =
     extraction.intent === "social_engineering" ? null : extraction.offer_amount;
-  const action: Action = isHostile ? { type: "walk" } : decide(state, offer, cfg, now);
+  // The price only moves when the user actually justified it — a bare number
+  // gets held, not conceded, so it can't be walked down by incrementing (§ anti-exploit).
+  const action: Action = isHostile
+    ? { type: "walk" }
+    : decide(state, offer, cfg, now, { concede: extraction.justified });
 
   // 3. Advance state.
   const nextState = applyAction(state, offer, action);

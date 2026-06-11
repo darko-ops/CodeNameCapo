@@ -103,6 +103,9 @@ export function makeTemplateNegotiator(): Negotiator {
         offer_amount: named,
         sentiment: "neutral",
         tactics: [],
+        // Sandbox negotiator can't assess reasoning; it concedes via the engine
+        // default, so mark justified to keep its stored extraction consistent.
+        justified: true,
       };
       return {
         reply,

@@ -126,8 +126,20 @@ function nextCurveAsk(s: SessionState, c: Config): number {
  *              (a question / stall) — yields a `hold`.
  * @param c     merchant config (versioned upstream)
  * @param now   epoch millis, for expiry evaluation
+ * @param opts.concede  whether the user EARNED a concession this turn (gave a real
+ *        reason, not just a number). Default true. When false, the engine will not
+ *        lower its ask — it holds firm and makes the user justify, so the price
+ *        can't be walked down by spitting incrementally-higher numbers.
  */
-export function decide(s: SessionState, offer: number | null, c: Config, now: number): Action {
+export function decide(
+  s: SessionState,
+  offer: number | null,
+  c: Config,
+  now: number,
+  opts: { concede?: boolean } = {},
+): Action {
+  const concede = opts.concede ?? true;
+
   // I3: expiry is evaluated here, never trusted from the client.
   if (now - s.openedAt > c.maxDurationH * 3_600_000) return { type: "walk" };
 
@@ -139,10 +151,19 @@ export function decide(s: SessionState, offer: number | null, c: Config, now: nu
   // --- Acceptance (I1: never accept below the floor) -----------------------
   // Accept if they've cleared the target (never haggle past target) OR met our
   // ask within acceptThreshold — but in BOTH cases only if it clears the floor.
+  // Acceptance is unconditional on justification: a good offer closes either way.
   const meetsTarget = u >= c.targetPrice;
   const meetsThreshold = u >= c.acceptThreshold * s.currentAsk;
   if (u >= c.floorPrice && (meetsTarget || meetsThreshold)) {
     return accept(u, c);
+  }
+
+  // --- No justification => hold the line (anti-"walk-it-down") -------------
+  // The price only moves when the user gives a real reason. A bare lower/higher
+  // number gets the same ask back; persist with no case and rounds run out -> walk.
+  if (!concede) {
+    if (s.round >= c.maxRounds) return { type: "walk" };
+    return { type: "hold", amount: s.currentAsk };
   }
 
   // --- Final round: take-it-or-leave-it -----------------------------------

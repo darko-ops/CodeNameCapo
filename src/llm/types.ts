@@ -39,6 +39,13 @@ export const ExtractionSchema = z.object({
   offer_amount: z.number().nullable(),
   sentiment: z.enum(["positive", "neutral", "negative"]),
   tactics: z.array(TacticSchema),
+  /**
+   * Did the user give a REAL reason to lower the price this turn (hardship, a
+   * competitor's price, a value/commitment argument) — vs. just stating or
+   * insisting on a number? Gates whether the engine concedes (§ anti-walk-down).
+   * Defaults to false (no concession) if the model omits it.
+   */
+  justified: z.boolean().default(false),
 });
 export type Extraction = z.infer<typeof ExtractionSchema>;
 

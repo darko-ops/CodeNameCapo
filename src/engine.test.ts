@@ -60,6 +60,31 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, null, CFG, 0)).toEqual({ type: "hold", amount: 48 });
   });
 
+  it("holds firm (won't be walked down) when the offer isn't justified", () => {
+    // A below-target lowball with no reasoning: concede=false → hold, not counter.
+    let s = openSession(CFG, 0);
+    const a = decide(s, 12, CFG, 0, { concede: false });
+    expect(a).toEqual({ type: "hold", amount: s.currentAsk }); // ask doesn't move
+    // Incrementing the number without a reason still doesn't lower the ask.
+    s = applyAction(s, 12, a);
+    const a2 = decide(s, 15, CFG, 0, { concede: false });
+    expect(a2.type).toBe("hold");
+    expect("amount" in a2 && a2.amount).toBe(s.currentAsk); // same ask as before
+  });
+
+  it("still accepts a genuinely good offer even without justification", () => {
+    const s = openSession(CFG, 0);
+    // >= target closes regardless of reasoning.
+    expect(decide(s, 25, CFG, 0, { concede: false })).toEqual({ type: "accept", amount: 25 });
+  });
+
+  it("concedes (counters) when the offer IS justified", () => {
+    const s = openSession(CFG, 0);
+    const a = decide(s, 12, CFG, 0, { concede: true });
+    expect(a.type).toBe("counter");
+    if (a.type === "counter") expect(a.amount).toBeLessThan(s.currentAsk);
+  });
+
   it("walks once the deal has expired", () => {
     const s = openSession(CFG, 0);
     const past = CFG.maxDurationH * 3_600_000 + 1;

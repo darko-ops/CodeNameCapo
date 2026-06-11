@@ -16,7 +16,7 @@ import { permittedAmount } from "./validator.js";
 export const RENDERER_MODEL = "claude-sonnet-4-6";
 
 /** The decision line handed to the renderer for a given action. */
-function decisionLine(action: Action): string {
+function decisionLine(action: Action, extraction: Extraction): string {
   switch (action.type) {
     case "accept":
       return `DECISION: ACCEPT. The deal closes at $${fmt(action.amount)}/mo. Congratulate them and make it feel earned.`;
@@ -24,8 +24,13 @@ function decisionLine(action: Action): string {
       return action.isFinal
         ? `DECISION: FINAL OFFER $${fmt(action.amount)}/mo. You went to bat for them one last time — say you fought your boss/the suits and $${fmt(action.amount)} is absolutely the best you can do, take it or leave it before the door closes.`
         : `DECISION: COUNTER at $${fmt(action.amount)}/mo. Play it like a pawn-shop haggle: act like you just went and checked with the higher-ups, came back, and $${fmt(action.amount)} is genuinely the best you can do. Hold firm, don't sound desperate.`;
-    case "hold":
-      return `DECISION: HOLD. The number on the table stays $${fmt(action.amount)}/mo. They asked a question or stalled — answer in character, restate the number, give no ground.`;
+    case "hold": {
+      const lowballedNoReason =
+        (extraction.intent === "offer" || extraction.intent === "reject") && !extraction.justified;
+      return lowballedNoReason
+        ? `DECISION: HOLD at $${fmt(action.amount)}/mo — and do NOT lower it. They just threw a number with no real reason. Call it out: spitting lower numbers doesn't move you. Tell them to actually make a case — why should you drop it? (a real budget, a competitor's price, a commitment). The price stays $${fmt(action.amount)} until they give you something worth taking upstairs.`
+        : `DECISION: HOLD at $${fmt(action.amount)}/mo. They asked something or stalled — answer in character, restate the number, give no ground.`;
+    }
     case "walk":
       return `DECISION: WALK. The negotiation is over (abuse or the clock ran out). End it cleanly and point them at standard pricing. State NO price at all.`;
   }
@@ -56,7 +61,7 @@ WHO SETS THE PRICE (this is your best haggling move — use it, and VARY it, don
 You never set the price yourself — some offstage authority does. When you counter, play it like Pawn Stars: act like you went and checked with your guy and came back with the best you can do. Rotate who that is, casually: "my boss", "the suits upstairs", "the math nerds in the back", "the bean counters", "corporate", "the guy who signs my checks", "the algorithm", "the higher-ups". Never say "the pricing desk".
 Examples of the vibe: "hang on lemme check… ok, talked to the suits, best i can do is $X" / "math nerds ran the numbers, they wont go under $X" / "checked with my boss, that's the floor, $X".
 
-${decisionLine(action)}${tacticHint}
+${decisionLine(action, extraction)}${tacticHint}
 
 HOW YOU TEXT (this is a text message, not an essay):
 - PLAIN TEXT ONLY. No markdown, no **bold**, no *asterisks*, no *roleplay actions*, no bullet points, no headings.
