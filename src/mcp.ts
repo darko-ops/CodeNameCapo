@@ -16,6 +16,15 @@
  * the existing fetch-based Hono app on a serverless host.
  */
 import { BouncrService, ServiceError } from "./service.js";
+import type { Merchant } from "./store/types.js";
+
+/**
+ * Per-request MCP context. `merchant` is set only in merchant-scoped mode (the
+ * connection carried a valid API key); null/absent is keyless buyer mode.
+ */
+export interface McpContext {
+  merchant?: Merchant | null;
+}
 
 const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_INFO = { name: "bouncr", title: "Bouncr — negotiated pricing", version: "1.0.0" };
@@ -73,16 +82,30 @@ export const MCP_TOOLS = [
   },
 ] as const;
 
+/**
+ * Merchant-scoped tool — advertised ONLY when the connection carried a valid API
+ * key. Returns the caller's own active plans with PUBLIC fields only: the list
+ * (display) price, currency, id. Floor/target/anchor/curve and every other policy
+ * internal stay server-side, exactly like the LLM never sees the floor.
+ */
+const LIST_PLANS_TOOL = {
+  name: "bouncr_list_plans",
+  description:
+    "List your own active plans (requires connecting with your merchant API key). Returns each plan's id, display price, and currency — no policy internals.",
+  inputSchema: { type: "object", properties: {} },
+} as const;
+
 type Json = Record<string, any>;
 
 /**
  * Handle one JSON-RPC message. Returns a response object, or null for a
  * notification (the caller replies 202 with no body).
  */
-export async function dispatchMcp(service: BouncrService, msg: Json): Promise<Json | null> {
+export async function dispatchMcp(service: BouncrService, msg: Json, ctx: McpContext = {}): Promise<Json | null> {
   const id = msg?.id;
   const method = msg?.method;
   const params = msg?.params ?? {};
+  const merchant = ctx.merchant ?? null;
   const isNotification = id === undefined || id === null;
   const ok = (result: Json) => ({ jsonrpc: "2.0", id, result });
   const err = (code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
@@ -102,9 +125,9 @@ export async function dispatchMcp(service: BouncrService, msg: Json): Promise<Js
       case "ping":
         return ok({});
       case "tools/list":
-        return ok({ tools: MCP_TOOLS });
+        return ok({ tools: toolsFor(merchant) });
       case "tools/call":
-        return ok(await callTool(service, params.name, params.arguments ?? {}));
+        return ok(await callTool(service, params.name, params.arguments ?? {}, merchant));
       default:
         return isNotification ? null : err(-32601, `method not found: ${method}`);
     }
@@ -113,16 +136,37 @@ export async function dispatchMcp(service: BouncrService, msg: Json): Promise<Js
   }
 }
 
+/** Tools advertised for a connection: the merchant-only ones appear only with a key. */
+function toolsFor(merchant: Merchant | null): readonly unknown[] {
+  return merchant ? [...MCP_TOOLS, LIST_PLANS_TOOL] : MCP_TOOLS;
+}
+
 /** Execute a tool. Tool-level failures come back as isError content (the agent reads it), not JSON-RPC errors. */
-async function callTool(service: BouncrService, name: string, args: Json): Promise<Json> {
+async function callTool(service: BouncrService, name: string, args: Json, merchant: Merchant | null): Promise<Json> {
   const toolErr = (message: string) => ({ content: [{ type: "text", text: message }], isError: true });
   const result = (data: Json) => ({ content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data });
 
   try {
     switch (name) {
+      case "bouncr_list_plans": {
+        // Merchant-scoped only. Strip every policy field — display price + id only.
+        if (!merchant) return toolErr("merchant authentication required — connect with your API key");
+        const plans = (await service.listPlans(merchant.id)).filter((p) => p.active);
+        return result({
+          plans: plans.map((p) => ({
+            plan_id: p.id,
+            display_price: p.config.listPrice,
+            currency: p.currency,
+            status: "active",
+          })),
+        });
+      }
       case "bouncr_start_negotiation": {
         const plan = str(args.plan);
         if (!plan) return toolErr("plan is required");
+        // Merchant-scoped: the plan must belong to the caller — not-found if not,
+        // so a cross-merchant id never leaks existence. Keyless mode is public.
+        if (merchant) await service.requireOwnedPlan(plan, merchant.id);
         const s = await service.createSession({ planId: plan, endUserRef: str(args.user_ref) ?? `agent_${rand()}` });
         const view = await service.getSessionView(s.sessionId);
         return result({
@@ -135,7 +179,7 @@ async function callTool(service: BouncrService, name: string, args: Json): Promi
         });
       }
       case "bouncr_offer": {
-        const auth = await authArgs(service, args);
+        const auth = await authArgs(service, args, merchant);
         if (auth.e) return toolErr(auth.e);
         const message = str(args.message);
         if (!message) return toolErr("message is required");
@@ -150,13 +194,13 @@ async function callTool(service: BouncrService, name: string, args: Json): Promi
         });
       }
       case "bouncr_accept": {
-        const auth = await authArgs(service, args);
+        const auth = await authArgs(service, args, merchant);
         if (auth.e) return toolErr(auth.e);
         const r = await service.acceptCurrent(auth.sid!);
         return result({ price: r.price, deal_id: r.dealId, ...(r.checkoutUrl ? { checkout_url: r.checkoutUrl } : {}) });
       }
       case "bouncr_status": {
-        const auth = await authArgs(service, args);
+        const auth = await authArgs(service, args, merchant);
         if (auth.e) return toolErr(auth.e);
         const v = await service.getSessionView(auth.sid!);
         return result({ status: v.status, current_ask: v.currentAsk, expires_at: v.expiresAt });
@@ -172,7 +216,11 @@ async function callTool(service: BouncrService, name: string, args: Json): Promi
   }
 }
 
-async function authArgs(service: BouncrService, args: Json): Promise<{ sid?: string; e?: string }> {
+async function authArgs(
+  service: BouncrService,
+  args: Json,
+  merchant: Merchant | null,
+): Promise<{ sid?: string; e?: string }> {
   const sid = str(args.session_id);
   const tok = str(args.session_token);
   if (!sid || !tok) return { e: "session_id and session_token are required" };
@@ -180,6 +228,15 @@ async function authArgs(service: BouncrService, args: Json): Promise<{ sid?: str
     await service.verifySessionToken(sid, tok);
   } catch {
     return { e: "invalid session_id or session_token" };
+  }
+  // Merchant-scoped: the session's plan must belong to the caller. Not-found if
+  // not — a session under another merchant's plan is invisible here.
+  if (merchant) {
+    try {
+      await service.requireOwnedSession(sid, merchant.id);
+    } catch {
+      return { e: "session not found" };
+    }
   }
   return { sid };
 }

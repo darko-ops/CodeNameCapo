@@ -370,10 +370,23 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
 
   // --- MCP server (Streamable HTTP) ----------------------------------------
   // Any AI agent can negotiate via tools — same engine + validator as the widget,
-  // so the floor holds. Keyless (plan id only), rate-limited like the widget.
-  app.post("/mcp", async (c) => {
+  // so the floor holds. Keyless = public buyer mode (plan id only). A valid
+  // `Authorization: Bearer <merchant API key>` switches to merchant-scoped mode:
+  // the caller's own plans are exposed and every plan/session is scoped to them.
+  const mcpHttp = async (c: Context) => {
     if (!limiter.hitAll(clientIp(c), [{ windowMs: 3_000, max: 12 }, { windowMs: 60_000, max: 40 }])) {
       return c.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "rate limited" } }, 429);
+    }
+    // Resolve a merchant from the Bearer key via the SAME path the REST API uses.
+    // The key is never logged or echoed; an invalid one is rejected opaquely.
+    let merchant: Awaited<ReturnType<typeof service.authenticateMerchantKey>> | null = null;
+    const key = bearer(c.req.header("authorization"));
+    if (key) {
+      try {
+        merchant = await service.authenticateMerchantKey(key);
+      } catch {
+        return c.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "invalid credentials" } }, 401);
+      }
     }
     let body: unknown;
     try {
@@ -384,9 +397,10 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     if (Array.isArray(body)) {
       return c.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "JSON-RPC batching is not supported" } }, 400);
     }
-    const res = await dispatchMcp(service, (body ?? {}) as Record<string, unknown>);
+    const res = await dispatchMcp(service, (body ?? {}) as Record<string, unknown>, { merchant });
     return res === null ? c.body(null, 202) : c.json(res);
-  });
+  };
+  app.post("/mcp", mcpHttp);
   // We don't open server-initiated streams; per the MCP spec a 405 is valid.
   app.get("/mcp", (c) => c.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "GET not supported — POST JSON-RPC" } }, 405));
 
