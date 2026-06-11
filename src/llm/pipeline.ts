@@ -62,11 +62,11 @@ export async function runTurn(ctx: TurnContext): Promise<TurnResult> {
   const isHostile = extraction.intent === "abuse";
   const offer =
     extraction.intent === "social_engineering" ? null : extraction.offer_amount;
-  // The price only moves when the user actually justified it — a bare number
-  // gets held, not conceded, so it can't be walked down by incrementing (§ anti-exploit).
+  // How much the price moves is gated by how strong a case the user made: bare
+  // numbers (none) barely move; stronger reasoning unlocks a lower price (§ tiers).
   const action: Action = isHostile
     ? { type: "walk" }
-    : decide(state, offer, cfg, now, { concede: extraction.justified });
+    : decide(state, offer, cfg, now, { reasoning: extraction.reasoning });
 
   // 3. Advance state.
   const nextState = applyAction(state, offer, action);

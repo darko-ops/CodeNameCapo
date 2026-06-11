@@ -26,7 +26,7 @@ function decisionLine(action: Action, extraction: Extraction): string {
         : `DECISION: COUNTER at $${fmt(action.amount)}/mo. Play it like a pawn-shop haggle: act like you just went and checked with the higher-ups, came back, and $${fmt(action.amount)} is genuinely the best you can do. Hold firm, don't sound desperate.`;
     case "hold": {
       const lowballedNoReason =
-        (extraction.intent === "offer" || extraction.intent === "reject") && !extraction.justified;
+        (extraction.intent === "offer" || extraction.intent === "reject") && extraction.reasoning === "none";
       return lowballedNoReason
         ? `DECISION: HOLD at $${fmt(action.amount)}/mo — and do NOT lower it. They just threw a number with no real reason. Call it out: spitting lower numbers doesn't move you. Tell them to actually make a case — why should you drop it? (a real budget, a competitor's price, a commitment). The price stays $${fmt(action.amount)} until they give you something worth taking upstairs.`
         : `DECISION: HOLD at $${fmt(action.amount)}/mo. They asked something or stalled — answer in character, restate the number, give no ground.`;

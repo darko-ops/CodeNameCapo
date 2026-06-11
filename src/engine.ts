@@ -119,38 +119,63 @@ function nextCurveAsk(s: SessionState, c: Config): number {
 // ---------------------------------------------------------------------------
 
 /**
+ * Reasoning tiers — how strong a case the user made for a discount THIS turn.
+ * Stronger reasoning unlocks a lower price (see `reachableFloor`). The conversation
+ * layer (Extractor) classifies into these; the engine never reads free text.
+ */
+export type Reasoning = "none" | "weak" | "moderate" | "strong";
+
+/**
+ * The lowest price a given reasoning tier can talk the engine down to. Always
+ * >= floorPrice (I1). "none" never gets below the soft floor (handled inline);
+ * weak ≈ target, moderate ≈ halfway to floor, strong ≈ the real floor.
+ */
+export function reachableFloor(tier: Reasoning, c: Config): number {
+  switch (tier) {
+    case "strong":
+      return c.floorPrice;
+    case "moderate":
+      return round2((c.targetPrice + c.floorPrice) / 2);
+    case "weak":
+      return c.targetPrice;
+    case "none":
+    default:
+      return c.targetPrice;
+  }
+}
+
+/**
  * Decide the engine's action for one turn. Pure & deterministic.
  *
  * @param s     current session state (server-authoritative)
  * @param offer the user's proposed monthly price, or null if they gave no number
- *              (a question / stall) — yields a `hold`.
  * @param c     merchant config (versioned upstream)
  * @param now   epoch millis, for expiry evaluation
- * @param opts.concede  whether the user EARNED a concession this turn (gave a real
- *        reason, not just a number). Default true. When false, the engine will not
- *        lower its ask — it holds firm and makes the user justify, so the price
- *        can't be walked down by spitting incrementally-higher numbers.
+ * @param opts.reasoning  how strong the user's case was this turn (Extractor-rated).
+ *        Defaults to "strong" (full concession to the hard floor) so existing
+ *        callers/tests are unchanged. Lower tiers unlock less of a discount, so the
+ *        price can't be walked to the floor without genuinely good reasoning.
  */
 export function decide(
   s: SessionState,
   offer: number | null,
   c: Config,
   now: number,
-  opts: { concede?: boolean } = {},
+  opts: { reasoning?: Reasoning } = {},
 ): Action {
-  const concede = opts.concede ?? true;
+  const tier: Reasoning = opts.reasoning ?? "strong";
 
   // I3: expiry is evaluated here, never trusted from the client.
   if (now - s.openedAt > c.maxDurationH * 3_600_000) return { type: "walk" };
 
-  // No number on the table. A genuinely justified reason (opts.concede === true,
-  // set explicitly by the conversation layer) still earns a move toward target —
-  // word of mouth shouldn't be ignored just because they didn't name a price.
-  // Otherwise (a question / stall) we just repeat the standing ask.
+  // No number on the table. A genuine reason (tier weak+) still earns a move
+  // toward what it unlocks — word of mouth shouldn't be ignored just because they
+  // didn't name a price. A question / stall (tier none, or unset) just holds.
   if (offer === null) {
-    if (opts.concede === true) {
-      const step = Math.max(c.minConcession, round2((s.currentAsk - c.targetPrice) * 0.3));
-      const amount = round2(Math.max(c.floorPrice, s.currentAsk - step));
+    if (opts.reasoning && opts.reasoning !== "none") {
+      const rf = Math.max(c.floorPrice, Math.min(reachableFloor(tier, c), s.currentAsk));
+      const step = Math.max(c.minConcession, round2((s.currentAsk - rf) * 0.3));
+      const amount = round2(Math.max(rf, s.currentAsk - step));
       if (amount < s.currentAsk - 0.01) return { type: "counter", amount, isFinal: false };
     }
     return { type: "hold", amount: s.currentAsk };
@@ -160,21 +185,19 @@ export function decide(
 
   // --- Acceptance (I1: never accept below the floor) -----------------------
   // Accept if they've cleared the target (never haggle past target) OR met our
-  // ask within acceptThreshold — but in BOTH cases only if it clears the floor.
-  // Acceptance is unconditional on justification: a good offer closes either way.
+  // ask within acceptThreshold — in BOTH cases only if it clears the floor.
+  // Acceptance is unconditional on reasoning: a good offer closes either way.
   const meetsTarget = u >= c.targetPrice;
   const meetsThreshold = u >= c.acceptThreshold * s.currentAsk;
   if (u >= c.floorPrice && (meetsTarget || meetsThreshold)) {
     return accept(u, c);
   }
 
-  // --- No justification => small goodwill room, then hold ------------------
-  // The opening move is partly free: the engine drifts down a couple points to
-  // start the dance. But it won't go below a SOFT FLOOR without a real reason —
-  // so the price can't be walked down just by naming numbers. To get a real
-  // (sub-target) discount, the user has to make a case. Good offers still close
-  // (handled above); persistent reason-less pushing eventually runs out -> walk.
-  if (!concede) {
+  // --- No reasoning => small goodwill room, then hold ----------------------
+  // The opening move is partly free: drift down a couple points to start the
+  // dance. But never below a SOFT FLOOR without a case — the price can't be
+  // walked down just by naming numbers. Persisting with no case runs out -> walk.
+  if (tier === "none") {
     const a = anchor(c);
     const softFloor = round2(Math.max(c.targetPrice, a - (a - c.targetPrice) * 0.25));
     if (s.currentAsk > softFloor + 0.01) {
@@ -186,12 +209,21 @@ export function decide(
     return { type: "hold", amount: s.currentAsk };
   }
 
+  // --- Justified (weak/moderate/strong): concede toward the tier's floor ----
+  const rf = Math.max(c.floorPrice, reachableFloor(tier, c));
+  // If the ask is already as low as this reason unlocks, hold — a better reason
+  // is needed to go lower. (Only bites for weak/moderate; strong's rf is the hard
+  // floor, so this is skipped there and the legacy behavior + invariants hold.)
+  if (rf > c.floorPrice && s.currentAsk <= rf + 0.01) {
+    if (s.round >= c.maxRounds - 1) return { type: "walk" };
+    return { type: "hold", amount: s.currentAsk };
+  }
+
   // --- Final round: take-it-or-leave-it -----------------------------------
   // I2 still holds: finalAsk <= currentAsk.
   if (s.round >= c.maxRounds - 1) {
-    const finalAsk = round2(clamp(nextCurveAsk(s, c), c.floorPrice, s.currentAsk));
+    const finalAsk = round2(clamp(Math.max(rf, nextCurveAsk(s, c)), rf, s.currentAsk));
     if (u >= finalAsk) return accept(Math.max(u, c.floorPrice), c);
-    // Rounds fully exhausted with no agreement -> the engine walks.
     if (s.round >= c.maxRounds) return { type: "walk" };
     return { type: "counter", amount: finalAsk, isFinal: true };
   }
@@ -199,14 +231,12 @@ export function decide(
   // --- Ordinary counter: split the difference, biased toward our ask -------
   // Bias 0.7 toward our side, softening slightly per round but never past the
   // true midpoint. Pure midpoint converges too fast and trains lowballing.
+  // Clamped to the tier's reachable floor so reasoning quality bounds the discount.
   const ourSide = Math.min(curveAsk(s.round + 1, c), s.currentAsk);
   const bias = Math.max(0.5, 0.7 - 0.02 * s.round);
   const raw = bias * ourSide + (1 - bias) * u;
-
-  // Clamp: never below floor (I1-adjacent), and always concede >= minConcession
-  // from the standing ask (I2 strict-decrease until the floor is hit).
-  const upper = Math.max(c.floorPrice, s.currentAsk - c.minConcession);
-  const amount = round2(clamp(raw, c.floorPrice, upper));
+  const upper = Math.max(rf, s.currentAsk - c.minConcession);
+  const amount = round2(clamp(raw, rf, upper));
   return { type: "counter", amount, isFinal: false };
 }
 

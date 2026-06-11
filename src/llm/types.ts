@@ -40,12 +40,15 @@ export const ExtractionSchema = z.object({
   sentiment: z.enum(["positive", "neutral", "negative"]),
   tactics: z.array(TacticSchema),
   /**
-   * Did the user give a REAL reason to lower the price this turn (hardship, a
-   * competitor's price, a value/commitment argument) — vs. just stating or
-   * insisting on a number? Gates whether the engine concedes (§ anti-walk-down).
-   * Defaults to false (no concession) if the model omits it.
+   * How strong a case the user made for a discount THIS turn — ranked. Stronger
+   * reasoning unlocks a lower price in the engine (see engine.reachableFloor).
+   * Defaults to "none" if the model omits it (no concession beyond goodwill).
+   *   none     — a bare number, insistence, empty flattery, threats
+   *   weak     — generic sympathy: "im broke", "im a student", "cant afford it"
+   *   moderate — a concrete anchor/commitment: a competitor's price, annual pay, loyalty, one referral
+   *   strong   — high business value: word of mouth at scale, an audience/influence, bulk/team, a real partnership
    */
-  justified: z.boolean().default(false),
+  reasoning: z.enum(["none", "weak", "moderate", "strong"]).default("none"),
 });
 export type Extraction = z.infer<typeof ExtractionSchema>;
 

@@ -60,24 +60,22 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, null, CFG, 0)).toEqual({ type: "hold", amount: 48 });
   });
 
-  it("gives a little goodwill room then holds at the soft floor (can't be walked down)", () => {
+  it("reasoning 'none': goodwill room then holds at the soft floor (can't be walked down)", () => {
     const softFloor = Math.max(CFG.targetPrice, anchor(CFG) - (anchor(CFG) - CFG.targetPrice) * 0.25);
     let s = openSession(CFG, 0);
 
-    // First unjustified offer: a small couple-point concession to start the dance.
-    const a = decide(s, 12, CFG, 0, { concede: false });
+    // First bare offer: a small couple-point concession to start the dance.
+    const a = decide(s, 12, CFG, 0, { reasoning: "none" });
     expect(a.type).toBe("counter");
     if (a.type === "counter") {
       expect(a.amount).toBeLessThan(s.currentAsk);
       expect(a.amount).toBeGreaterThanOrEqual(softFloor - 1e-9);
     }
 
-    // Keep spitting numbers with no reason: the ask drifts to the soft floor and
-    // then STICKS — it never gets walked below it without justification.
+    // Keep spitting numbers with no reason: ask drifts to the soft floor, sticks.
     let holds = false;
     for (let i = 0; i < 12; i++) {
-      const act = decide(s, 12, CFG, 0, { concede: false });
-      expect(act.type === "counter" || act.type === "hold" || act.type === "walk").toBe(true);
+      const act = decide(s, 12, CFG, 0, { reasoning: "none" });
       if (act.type === "hold") {
         expect(act.amount).toBeGreaterThanOrEqual(softFloor - 1e-9);
         holds = true;
@@ -85,34 +83,45 @@ describe("scripted negotiation (sanity)", () => {
       }
       if (act.type === "walk") break;
       s = applyAction(s, 12, act);
-      expect(s.currentAsk).toBeGreaterThanOrEqual(softFloor - 1e-9); // never below soft floor
+      expect(s.currentAsk).toBeGreaterThanOrEqual(softFloor - 1e-9);
     }
     expect(holds).toBe(true);
   });
 
-  it("still accepts a genuinely good offer even without justification", () => {
+  it("accepts a genuinely good offer regardless of reasoning tier", () => {
     const s = openSession(CFG, 0);
-    // >= target closes regardless of reasoning.
-    expect(decide(s, 25, CFG, 0, { concede: false })).toEqual({ type: "accept", amount: 25 });
+    expect(decide(s, 25, CFG, 0, { reasoning: "none" })).toEqual({ type: "accept", amount: 25 });
   });
 
-  it("concedes (counters) when the offer IS justified", () => {
+  it("stronger reasoning unlocks a strictly lower reachable price", () => {
+    // Drive a relentless $1 lowballer to the bottom for each tier; compare floors.
+    const lowestFor = (tier: "weak" | "moderate" | "strong") => {
+      let s = openSession(CFG, 0);
+      let lowest = s.currentAsk;
+      for (let i = 0; i < 40; i++) {
+        const a = decide(s, 1, CFG, 0, { reasoning: tier });
+        if (a.type === "accept" || a.type === "walk") break;
+        s = applyAction(s, 1, a);
+        if ("amount" in a) lowest = Math.min(lowest, a.amount);
+      }
+      return lowest;
+    };
+    const weak = lowestFor("weak");
+    const moderate = lowestFor("moderate");
+    const strong = lowestFor("strong");
+    expect(weak).toBeGreaterThan(moderate); // weak can't go as low
+    expect(moderate).toBeGreaterThan(strong); // moderate can't reach the strong floor
+    expect(strong).toBeGreaterThanOrEqual(CFG.floorPrice); // strong reaches ~hard floor, never below
+  });
+
+  it("a reason with NO number still moves the price (word of mouth)", () => {
     const s = openSession(CFG, 0);
-    const a = decide(s, 12, CFG, 0, { concede: true });
+    const a = decide(s, null, CFG, 0, { reasoning: "strong" }); // 'i'll refer my whole club'
     expect(a.type).toBe("counter");
     if (a.type === "counter") expect(a.amount).toBeLessThan(s.currentAsk);
-  });
-
-  it("a justified reason with NO number still moves the price toward target", () => {
-    const s = openSession(CFG, 0); // ask = anchor 48, target 22
-    const a = decide(s, null, CFG, 0, { concede: true }); // e.g. 'i'll refer my friends'
-    expect(a.type).toBe("counter");
-    if (a.type === "counter") {
-      expect(a.amount).toBeLessThan(s.currentAsk);
-      expect(a.amount).toBeGreaterThanOrEqual(CFG.targetPrice - CFG.minConcession);
-    }
-    // a numberless turn WITHOUT justification still just holds (default behavior)
+    // a numberless turn with no reasoning still just holds
     expect(decide(s, null, CFG, 0).type).toBe("hold");
+    expect(decide(s, null, CFG, 0, { reasoning: "none" }).type).toBe("hold");
   });
 
   it("walks once the deal has expired", () => {
