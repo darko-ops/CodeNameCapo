@@ -13,7 +13,8 @@
   h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.4px; }
   .sub { color: var(--muted); margin: 0 0 20px; }
   .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 22px; }
-  input { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; background: #14141c; color: var(--text); }
+  input, select { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; background: #14141c; color: var(--text); cursor: pointer; }
+  select { max-width: 240px; }
   input::placeholder { color: #5a5a6a; }
   button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
   button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
@@ -58,11 +59,12 @@
 
   <div class="bar" id="authed" style="display:none">
     <input id="base" placeholder="API base" size="22" />
-    <input id="plan" placeholder="plan_id" value="plan_demo" size="12" />
+    <select id="plan" title="Your plans"></select>
     <button id="refresh">Refresh</button>
     <span class="meta">signed in as <b id="who" style="color:var(--text)"></b></span>
     <button class="ghost" id="logout">Log out</button>
     <span id="status"></span>
+    <span class="meta" id="no-plans" style="display:none">No plans yet — <a href="/signup" style="color:var(--accent)">create one →</a></span>
   </div>
 
   <div class="panel" id="connect-panel">
@@ -144,10 +146,39 @@
       token = d.token; localStorage.setItem(TKEY, token);
       $("login-status").textContent = "";
       showAuthed(d.merchant);
-      load();
+      enter();
     } catch (err) { $("login-status").innerHTML = '<span class="err">' + err.message + "</span>"; }
   });
   $("logout").onclick = logout;
+
+  // Populate the plan dropdown from the merchant's own plans (scoped server-side).
+  async function loadPlans() {
+    const sel = $("plan");
+    try {
+      const r = await (await api("/v1/plans")).json();
+      const plans = r.plans || [];
+      sel.innerHTML = "";
+      if (!plans.length) { $("no-plans").style.display = "inline"; sel.style.display = "none"; return false; }
+      $("no-plans").style.display = "none"; sel.style.display = "";
+      for (const p of plans) {
+        const o = document.createElement("option");
+        o.value = p.id;
+        const product = p.persona && p.persona.product_name ? p.persona.product_name : p.id;
+        o.textContent = product + " · $" + p.list_price + "/mo";
+        sel.appendChild(o);
+      }
+      const last = localStorage.getItem("bouncr_dash_plan");
+      if (last && plans.some((p) => p.id === last)) sel.value = last;
+      return true;
+    } catch (_) { return false; }
+  }
+  // After auth: load the merchant's plans, then render the selected one.
+  async function enter() {
+    const has = await loadPlans();
+    if (has) load();
+    else { $("funnel").innerHTML = ""; $("closing").innerHTML = ""; $("sessions").innerHTML = ""; $("status").textContent = ""; }
+  }
+  $("plan").onchange = load;
 
   function card(label, value) { return `<div class="card"><h3>${label}</h3><div class="big">${value}</div></div>`; }
 
@@ -278,7 +309,7 @@
       const r = await fetch(base() + "/v1/auth/me", { headers: authHeaders() });
       if (!r.ok) { logout(); return; }
       showAuthed((await r.json()).merchant);
-      load();
+      enter();
     } catch (_) { logout(); }
   })();
 })();
