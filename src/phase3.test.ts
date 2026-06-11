@@ -7,7 +7,10 @@ import { computeAnalytics } from "./analytics.js";
 import { demoPlan, demoMerchant } from "./config.js";
 import type { WebhookEvent } from "./stripe/gateway.js";
 
-function setup(planOverrides: Partial<ReturnType<typeof demoPlan>["policy"]> = {}) {
+function setup(
+  planOverrides: Partial<ReturnType<typeof demoPlan>["policy"]> = {},
+  opts: { applicationFeePercent?: number } = {},
+) {
   const plan = demoPlan();
   plan.policy = { ...plan.policy, ...planOverrides };
   const store = new MemoryStore([plan], [demoMerchant()]);
@@ -18,6 +21,7 @@ function setup(planOverrides: Partial<ReturnType<typeof demoPlan>["policy"]> = {
     negotiator: makeTemplateNegotiator(),
     baseUrl: "http://localhost:8787",
     now: () => Date.now(),
+    ...(opts.applicationFeePercent !== undefined ? { applicationFeePercent: opts.applicationFeePercent } : {}),
   });
   return { plan, store, stripe, service };
 }
@@ -94,6 +98,56 @@ describe("Stripe Connect routing (Spec §7, Phase 3)", () => {
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
     await service.acceptCurrent(sessionId);
     expect(stripe.checkouts.at(-1)?.connectedAccountId).toBeNull();
+  });
+});
+
+describe("Connect application fee — Bouncr's take-rate (business model)", () => {
+  it("attaches the platform fee on a deal that settles into the merchant's account", async () => {
+    const { plan, stripe, service } = setup({}, { applicationFeePercent: 20 });
+    await service.startConnectOnboarding("merchant_demo", "http://x/return", "http://x/refresh");
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
+    await service.acceptCurrent(sessionId);
+    const last = stripe.checkouts.at(-1)!;
+    expect(last.connectedAccountId).toMatch(/^acct_test_/);
+    expect(last.applicationFeePercent).toBe(20); // 20% of each invoice -> Bouncr
+  });
+
+  it("takes NO fee when the deal settles to the platform (no connected account)", async () => {
+    const { plan, stripe, service } = setup({}, { applicationFeePercent: 20 });
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
+    await service.acceptCurrent(sessionId);
+    const last = stripe.checkouts.at(-1)!;
+    expect(last.connectedAccountId).toBeNull();
+    expect(last.applicationFeePercent).toBeNull(); // no account to fee against
+  });
+
+  it("defaults to no fee (merchant keeps 100%) and clamps an out-of-range rate", async () => {
+    const noFee = setup();
+    await noFee.service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
+    let s = await noFee.service.createSession({ planId: noFee.plan.id, endUserRef: "b" });
+    await noFee.service.acceptCurrent(s.sessionId);
+    expect(noFee.stripe.checkouts.at(-1)!.applicationFeePercent).toBeNull();
+
+    const tooHigh = setup({}, { applicationFeePercent: 250 });
+    await tooHigh.service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
+    s = await tooHigh.service.createSession({ planId: tooHigh.plan.id, endUserRef: "b" });
+    await tooHigh.service.acceptCurrent(s.sessionId);
+    expect(tooHigh.stripe.checkouts.at(-1)!.applicationFeePercent).toBe(100); // clamped
+  });
+
+  it("keeps the fee applied through a renegotiation reprice", async () => {
+    const { plan, store, stripe, service } = setup({}, { applicationFeePercent: 15 });
+    await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
+    // Close + settle an initial deal so a subscription exists to reprice.
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
+    const accepted = await service.acceptCurrent(sessionId);
+    await service.handleStripeEvent(completed((await store.getDeal(accepted.dealId))!.stripeCheckoutId!));
+    // Reopen + reprice upward.
+    const r = await service.renegotiateDeal(accepted.dealId, "up");
+    await service.acceptCurrent(r.sessionId);
+    const upd = stripe.subscriptionUpdates.at(-1)!;
+    expect(upd.connectedAccountId).toMatch(/^acct_test_/);
+    expect(upd.applicationFeePercent).toBe(15);
   });
 });
 

@@ -30,11 +30,14 @@ export class LiveStripeGateway implements StripeGateway {
 
   async createCheckout(params: CheckoutParams): Promise<CheckoutResult> {
     // Connect Standard (Spec §7): when the merchant has a connected account, the
-    // subscription is created directly on it (Stripe-Account header). We take no
-    // application fee in v1 — the merchant keeps 100%; Bouncr bills separately.
+    // subscription is created directly on it (Stripe-Account header), and Bouncr
+    // takes its cut as a Connect application fee on each invoice. The fee only
+    // makes sense on a direct charge to a connected account — settling to the
+    // platform's own account (demo / no Connect) carries no fee.
     const options = params.connectedAccountId
       ? { stripeAccount: params.connectedAccountId }
       : undefined;
+    const feePercent = connectFee(params.connectedAccountId, params.applicationFeePercent);
 
     const session = await this.stripe.checkout.sessions.create(
       {
@@ -43,7 +46,10 @@ export class LiveStripeGateway implements StripeGateway {
         cancel_url: params.cancelUrl,
         client_reference_id: params.endUserRef,
         metadata: { dealId: params.dealId, planKey: params.planKey },
-        subscription_data: { metadata: { dealId: params.dealId } },
+        subscription_data: {
+          metadata: { dealId: params.dealId },
+          ...(feePercent ? { application_fee_percent: feePercent } : {}),
+        },
         line_items: [
           {
             quantity: 1,
@@ -77,9 +83,14 @@ export class LiveStripeGateway implements StripeGateway {
       },
       opts,
     );
+    const feePercent = connectFee(params.connectedAccountId, params.applicationFeePercent);
     await this.stripe.subscriptions.update(
       params.subscriptionId,
-      { items: [{ id: item.id, price: price.id }], proration_behavior: "create_prorations" },
+      {
+        items: [{ id: item.id, price: price.id }],
+        proration_behavior: "create_prorations",
+        ...(feePercent ? { application_fee_percent: feePercent } : {}),
+      },
       opts,
     );
     return { ok: true };
@@ -116,4 +127,13 @@ export class LiveStripeGateway implements StripeGateway {
     }
     return { type: "ignored" };
   }
+}
+
+/**
+ * The Connect application fee to apply, or null. A fee only exists on a direct
+ * charge to a connected account; clamped to a sane (0, 100] band.
+ */
+function connectFee(connectedAccountId: string | null | undefined, pct: number | null | undefined): number | null {
+  if (!connectedAccountId || !pct || !Number.isFinite(pct) || pct <= 0) return null;
+  return Math.min(100, pct);
 }

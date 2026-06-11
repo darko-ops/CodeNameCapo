@@ -20,6 +20,12 @@ export interface CheckoutParams {
   cancelUrl: string;
   /** Connected Stripe account (acct_...) to settle into — Connect (Spec §7, Phase 3). */
   connectedAccountId?: string | null;
+  /**
+   * Bouncr's take-rate as a % of each recurring invoice (Stripe Connect
+   * `application_fee_percent`, 0–100). Only applied on a direct charge to a
+   * connected account; ignored when settling to the platform's own account.
+   */
+  applicationFeePercent?: number | null;
 }
 
 export interface OnboardingParams {
@@ -56,6 +62,8 @@ export interface SubscriptionUpdateParams {
   amount: number; // dollars
   currency: string;
   connectedAccountId?: string | null;
+  /** Take-rate to keep applied after a reprice (Connect application fee, 0–100). */
+  applicationFeePercent?: number | null;
 }
 
 export interface StripeGateway {

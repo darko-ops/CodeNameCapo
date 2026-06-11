@@ -103,11 +103,15 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
     negotiator = makeTemplateNegotiator();
   }
 
+  // Platform take-rate (Connect application fee), e.g. BOUNCR_APPLICATION_FEE_PERCENT=20.
+  const applicationFeePercent = Number(env.BOUNCR_APPLICATION_FEE_PERCENT ?? "") || 0;
+
   const service = new BouncrService({
     store,
     stripe,
     negotiator,
     baseUrl: env.BOUNCR_BASE_URL ?? "http://localhost:8787",
+    applicationFeePercent,
   });
 
   return {

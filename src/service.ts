@@ -40,6 +40,12 @@ export interface ServiceDeps {
   baseUrl: string;
   /** Injectable clock (defaults to Date.now). */
   now?: () => number;
+  /**
+   * Bouncr's platform take-rate, as a % of each settled invoice (0–100). Applied
+   * as a Stripe Connect application fee on deals that settle into a merchant's
+   * connected account. Defaults to 0 (merchant keeps 100%).
+   */
+  applicationFeePercent?: number;
 }
 
 export interface CreateSessionInput {
@@ -77,6 +83,8 @@ export class BouncrService {
   private readonly negotiator: Negotiator;
   private readonly baseUrl: string;
   private readonly now: () => number;
+  /** Platform take-rate (% of each settled invoice), clamped to [0, 100]. */
+  private readonly applicationFeePercent: number;
 
   constructor(deps: ServiceDeps) {
     this.store = deps.store;
@@ -84,6 +92,8 @@ export class BouncrService {
     this.negotiator = deps.negotiator;
     this.baseUrl = deps.baseUrl.replace(/\/$/, "");
     this.now = deps.now ?? Date.now;
+    const fee = deps.applicationFeePercent ?? 0;
+    this.applicationFeePercent = Number.isFinite(fee) ? Math.max(0, Math.min(100, fee)) : 0;
   }
 
   // --- Session lifecycle ----------------------------------------------------
@@ -526,12 +536,14 @@ export class BouncrService {
     const merchant = await this.store.getMerchant(plan.merchantId);
 
     if (subscriptionId) {
+      const connectedAccountId = merchant?.stripeConnectId ?? null;
       await this.stripe.updateSubscription({
         subscriptionId,
         productName: plan.persona.productName,
         amount,
         currency: plan.currency,
-        connectedAccountId: merchant?.stripeConnectId ?? null,
+        connectedAccountId,
+        applicationFeePercent: connectedAccountId && this.applicationFeePercent > 0 ? this.applicationFeePercent : null,
       });
     }
 
@@ -587,8 +599,11 @@ export class BouncrService {
       settledAt: null,
     });
 
-    // Connect (Spec §7): settle into the merchant's account when onboarded.
+    // Connect (Spec §7): settle into the merchant's account when onboarded, and
+    // take Bouncr's cut as an application fee on that direct charge (§ business
+    // model). No connected account => settles to the platform, no fee.
     const merchant = await this.store.getMerchant(plan.merchantId);
+    const connectedAccountId = merchant?.stripeConnectId ?? null;
     const checkout = await this.stripe.createCheckout({
       planKey: plan.planKey,
       productName: plan.persona.productName,
@@ -596,7 +611,8 @@ export class BouncrService {
       currency: plan.currency,
       endUserRef: session.endUserRef,
       dealId: deal.id,
-      connectedAccountId: merchant?.stripeConnectId ?? null,
+      connectedAccountId,
+      applicationFeePercent: connectedAccountId && this.applicationFeePercent > 0 ? this.applicationFeePercent : null,
       successUrl: `${this.baseUrl}/return?status=success&deal=${deal.id}`,
       cancelUrl: `${this.baseUrl}/return?status=cancel&deal=${deal.id}`,
     });
