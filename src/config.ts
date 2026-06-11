@@ -17,6 +17,8 @@ import { FakeStripeGateway } from "./stripe/fake.js";
 import { LiveStripeGateway } from "./stripe/live.js";
 import type { Negotiator } from "./llm/negotiator.js";
 import { makeAnthropicNegotiator, makeTemplateNegotiator } from "./llm/negotiator.js";
+import type { Mailer } from "./mailer.js";
+import { ConsoleMailer, ResendMailer } from "./mailer.js";
 import { BouncrService } from "./service.js";
 
 /** The demo merchant Bouncr ships with (Connect not yet onboarded). */
@@ -74,7 +76,9 @@ export interface BuiltService {
   service: BouncrService;
   /** The same gateway the service uses — the app needs it for webhook parsing. */
   stripe: StripeGateway;
-  sandbox: { stripe: boolean; negotiator: boolean };
+  /** Outbound email (Resend live, console in sandbox). */
+  mailer: Mailer;
+  sandbox: { stripe: boolean; negotiator: boolean; email: boolean };
   store: "postgres" | "memory";
   apiKey: string | null;
   /** HMAC secret for signing dashboard session tokens. */
@@ -139,6 +143,16 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
     negotiator = makeTemplateNegotiator();
   }
 
+  // Email: Resend when RESEND_API_KEY is set, else a console logger (sandbox).
+  let mailer: Mailer;
+  let emailSandbox = true;
+  if (env.RESEND_API_KEY) {
+    mailer = new ResendMailer(env.RESEND_API_KEY, env.BOUNCR_EMAIL_FROM ?? "Bouncr <noreply@thebouncr.com>");
+    emailSandbox = false;
+  } else {
+    mailer = new ConsoleMailer();
+  }
+
   // Platform take-rate (Connect application fee), e.g. BOUNCR_APPLICATION_FEE_PERCENT=20.
   const applicationFeePercent = Number(env.BOUNCR_APPLICATION_FEE_PERCENT ?? "") || 0;
 
@@ -153,7 +167,8 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
   return {
     service,
     stripe,
-    sandbox: { stripe: stripeSandbox, negotiator: negotiatorSandbox },
+    mailer,
+    sandbox: { stripe: stripeSandbox, negotiator: negotiatorSandbox, email: emailSandbox },
     store: usePostgres ? "postgres" : "memory",
     apiKey: env.BOUNCR_API_KEY ?? null,
     authSecret,

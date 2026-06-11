@@ -6,6 +6,7 @@ import { FakeStripeGateway } from "./stripe/fake.js";
 import { makeTemplateNegotiator } from "./llm/negotiator.js";
 import { demoPlan, demoMerchant } from "./config.js";
 import { generateMerchantKey, hashKey } from "./auth.js";
+import { ConsoleMailer } from "./mailer.js";
 
 const PLAN = demoPlan();
 
@@ -13,7 +14,7 @@ function makeApp() {
   const store = new MemoryStore([PLAN], [demoMerchant()]);
   const stripe = new FakeStripeGateway();
   const service = new BouncrService({ store, stripe, negotiator: makeTemplateNegotiator(), baseUrl: "http://x" });
-  return buildApp({ service, stripe, apiKey: null, authSecret: "test_secret" });
+  return buildApp({ service, stripe, apiKey: null, authSecret: "test_secret", mailer: new ConsoleMailer() });
 }
 
 // Two merchants, each with a key + plans (one of A's is inactive), one app/store.
@@ -37,7 +38,7 @@ function scopedApp() {
   );
   const stripe = new FakeStripeGateway();
   const service = new BouncrService({ store, stripe, negotiator: makeTemplateNegotiator(), baseUrl: "http://x" });
-  return { app: buildApp({ service, stripe, apiKey: null, authSecret: "s" }), keyA: a.key, keyB: b.key };
+  return { app: buildApp({ service, stripe, apiKey: null, authSecret: "s", mailer: new ConsoleMailer() }), keyA: a.key, keyB: b.key };
 }
 
 const rpc = (app: any, msg: unknown, key?: string) =>

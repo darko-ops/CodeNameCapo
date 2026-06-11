@@ -91,6 +91,46 @@ export function verifySession(token: string, secret: string, now: number): { mer
   }
 }
 
+// --- password reset (emailed link) ----------------------------------------
+
+/**
+ * Short fingerprint of the current password hash. Embedded in a reset token so
+ * the link is single-use: any password change (or a prior reset) changes the
+ * hash, so the fingerprint no longer matches and outstanding links die.
+ */
+export function pwFingerprint(passwordHash: string | null | undefined): string {
+  return createHash("sha256").update(passwordHash ?? "").digest("hex").slice(0, 16);
+}
+
+/** Sign a password-reset token binding a merchant id + password fingerprint. */
+export function signReset(
+  merchantId: string,
+  fingerprint: string,
+  secret: string,
+  ttlMs: number,
+  now: number,
+): { token: string; expiresAt: number } {
+  const expiresAt = now + ttlMs;
+  const payload = Buffer.from(JSON.stringify({ m: merchantId, fp: fingerprint, exp: expiresAt })).toString("base64url");
+  // Namespaced HMAC ("reset.") so a session token can't be replayed as a reset.
+  return { token: `${payload}.${hmac("reset." + payload, secret)}`, expiresAt };
+}
+
+/** Verify a reset token: signature + expiry. Returns {merchantId, fingerprint} or null. */
+export function verifyReset(token: string, secret: string, now: number): { merchantId: string; fingerprint: string } | null {
+  const dot = token.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const payload = token.slice(0, dot);
+  if (!safeEqualHex(token.slice(dot + 1), hmac("reset." + payload, secret))) return null;
+  try {
+    const { m, fp, exp } = JSON.parse(Buffer.from(payload, "base64url").toString());
+    if (typeof m !== "string" || typeof fp !== "string" || typeof exp !== "number" || exp < now) return null;
+    return { merchantId: m, fingerprint: fp };
+  } catch {
+    return null;
+  }
+}
+
 function hmac(data: string, secret: string): string {
   return createHmac("sha256", secret).update(data).digest("hex");
 }

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reset password · Bouncr</title>
+<link rel="icon" href="/favicon.ico" />
+<style>
+  :root { --bg:#0B0B12; --panel:#13131c; --line:#23232f; --text:#E5E7EB; --muted:#9CA3AF; --accent:#7C3AED; --accent2:#A78BFA; --mint:#34D399; --err:#F87171; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:430px; margin:11vh auto; padding:0 18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:30px 26px; }
+  .logo { font-size:20px; font-weight:800; letter-spacing:-.4px; color:#fff; margin-bottom:22px; display:flex; align-items:center; gap:9px; }
+  .logo svg { width:30px; height:30px; }
+  h1 { font-size:20px; letter-spacing:-.3px; margin:0 0 6px; }
+  .sub { color:var(--muted); font-size:13.5px; line-height:1.55; margin:0 0 20px; }
+  label { display:block; font-size:12.5px; color:var(--muted); margin:0 0 6px; }
+  input { width:100%; background:#0e0e14; border:1px solid var(--line); border-radius:9px; padding:11px 12px; color:var(--text); font:inherit; margin-bottom:12px; }
+  input:focus { outline:none; border-color:var(--accent); }
+  button { width:100%; background:var(--accent); color:#fff; border:0; border-radius:10px; padding:12px; font:inherit; font-weight:700; cursor:pointer; }
+  button:hover { background:#6d28d9; }
+  button:disabled { opacity:.6; cursor:default; }
+  .status { font-size:13px; margin-top:14px; min-height:18px; }
+  .err { color:var(--err); }
+  .ok { color:var(--mint); }
+  .foot { margin-top:18px; font-size:13px; color:var(--muted); text-align:center; }
+  .foot a { color:var(--accent2); font-weight:600; text-decoration:none; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><rect x="8" y="8" width="84" height="84" rx="24" fill="#7C3AED"/><circle cx="50" cy="34" r="10" fill="#0B0B12"/><path d="M27 64 L73 53" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/><path d="M27 53 L73 64" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/></svg>
+      Bouncr
+    </div>
+
+    <!-- Request a reset link (no token in the URL) -->
+    <form id="request" class="hidden" autocomplete="on">
+      <h1>Forgot your password?</h1>
+      <p class="sub">Enter your account email and we'll send you a link to set a new one.</p>
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="username" placeholder="you@company.com" required />
+      <button id="request-btn" type="submit">Send reset link</button>
+      <div class="status" id="request-status"></div>
+      <div class="foot"><a href="/dashboard">Back to login</a></div>
+    </form>
+
+    <!-- Set a new password (token present) -->
+    <form id="set" class="hidden" autocomplete="off">
+      <h1>Choose a new password</h1>
+      <p class="sub">Pick something at least 8 characters long.</p>
+      <label for="pw">New password</label>
+      <input id="pw" type="password" autocomplete="new-password" placeholder="new password" minlength="8" required />
+      <label for="pw2">Confirm password</label>
+      <input id="pw2" type="password" autocomplete="new-password" placeholder="confirm new password" minlength="8" required />
+      <button id="set-btn" type="submit">Update password</button>
+      <div class="status" id="set-status"></div>
+      <div class="foot"><a href="/dashboard">Back to login</a></div>
+    </form>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const token = new URLSearchParams(location.search).get("token");
+
+  if (token) {
+    $("set").classList.remove("hidden");
+    $("set").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const pw = $("pw").value, pw2 = $("pw2").value;
+      const set = (m, ok) => ($("set-status").className = "status " + (ok ? "ok" : "err"), $("set-status").textContent = m);
+      if (pw.length < 8) return set("password must be at least 8 characters", false);
+      if (pw !== pw2) return set("passwords don't match", false);
+      $("set-btn").disabled = true; set("updating…", true);
+      try {
+        const r = await fetch("/v1/auth/reset-password", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token, new_password: pw }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "could not reset password");
+        set("Password updated. Redirecting to login…", true);
+        setTimeout(() => (location.href = "/dashboard"), 1400);
+      } catch (err) { $("set-btn").disabled = false; set(err.message, false); }
+    });
+  } else {
+    $("request").classList.remove("hidden");
+    $("request").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = $("email").value.trim();
+      const set = (m, ok) => ($("request-status").className = "status " + (ok ? "ok" : "err"), $("request-status").textContent = m);
+      if (!email) return;
+      $("request-btn").disabled = true; set("sending…", true);
+      try {
+        await fetch("/v1/auth/forgot-password", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+      } catch (_) {}
+      // Always show the same confirmation — we never reveal whether the email exists.
+      set("If an account exists for that email, a reset link is on its way. Check your inbox.", true);
+      $("request-btn").disabled = false;
+    });
+  }
+})();
+</script>
+</body>
+</html>

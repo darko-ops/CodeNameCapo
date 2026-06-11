@@ -20,6 +20,7 @@ import {
   generateMerchantKey,
   hashPassword,
   verifyPassword,
+  pwFingerprint,
 } from "./auth.js";
 
 /** Coerce to a finite number, or null. */
@@ -268,6 +269,33 @@ export class BouncrService {
     }
     await this.store.updateMerchant(merchantId, { passwordHash: hashPassword(newPassword) });
     await this.store.appendEvent("merchant.password_changed", { merchantId });
+  }
+
+  /**
+   * Forgot-password lookup. Returns the merchant id, name, and a fingerprint of
+   * the current password (which binds the reset token, making it single-use)
+   * WITHOUT exposing the hash. Null if no account has that email — the caller
+   * must still respond identically so the endpoint can't be used to enumerate.
+   */
+  async lookupForReset(email: string): Promise<{ merchantId: string; name: string; fingerprint: string } | null> {
+    const m = email ? await this.store.getMerchantByEmail(email.trim().toLowerCase()) : null;
+    return m ? { merchantId: m.id, name: m.name, fingerprint: pwFingerprint(m.passwordHash) } : null;
+  }
+
+  /**
+   * Complete a password reset. The token's fingerprint must still match the
+   * stored password (single-use: a prior reset or change invalidates the link).
+   */
+  async resetPassword(merchantId: string, expectedFingerprint: string, newPassword: string): Promise<void> {
+    const m = await this.store.getMerchant(merchantId);
+    if (!m || pwFingerprint(m.passwordHash) !== expectedFingerprint) {
+      throw new ServiceError("bad_request", "this reset link is invalid or has already been used");
+    }
+    if ((newPassword ?? "").length < 8) {
+      throw new ServiceError("bad_request", "new password must be at least 8 characters");
+    }
+    await this.store.updateMerchant(merchantId, { passwordHash: hashPassword(newPassword) });
+    await this.store.appendEvent("merchant.password_reset", { merchantId });
   }
 
   /** A merchant's own plans (onboarding / dashboard). */

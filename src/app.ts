@@ -22,9 +22,10 @@ import { streamSSE } from "hono/streaming";
 import type { StripeGateway } from "./stripe/gateway.js";
 import { BouncrService, ServiceError } from "./service.js";
 import { RateLimiter, type RateRule } from "./ratelimit.js";
-import { signSession, verifySession } from "./auth.js";
+import { signSession, verifySession, signReset, verifyReset } from "./auth.js";
+import type { Mailer } from "./mailer.js";
 import { dispatchMcp } from "./mcp.js";
-import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML } from "./widget/assets.js";
+import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML, RESET_HTML } from "./widget/assets.js";
 
 export interface AppDeps {
   service: BouncrService;
@@ -35,10 +36,14 @@ export interface AppDeps {
   authSecret: string;
   /** True only when a real (live) Stripe gateway is configured. Sandbox/fake = false. */
   stripeLive?: boolean;
+  /** Sends transactional email (password reset). Console logger in the sandbox. */
+  mailer: Mailer;
 }
 
 /** Dashboard session lifetime. */
 const DASHBOARD_TTL_MS = 12 * 60 * 60 * 1000;
+/** Password-reset link lifetime — short, since the email arrives in seconds. */
+const RESET_TTL_MS = 60 * 60 * 1000;
 
 const STATUS: Record<ServiceError["code"], 400 | 401 | 404 | 409> = {
   bad_request: 400,
@@ -126,6 +131,45 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     }
     const b = await safeJson(c);
     await service.changePassword(c.get("merchantId"), str(b.current_password) ?? "", str(b.new_password) ?? "");
+    return c.json({ ok: true });
+  });
+
+  // Forgot password: email a single-use reset link. ALWAYS returns 200 — never
+  // reveals whether an account exists (no enumeration). Keyless + rate-limited.
+  app.post("/v1/auth/forgot-password", async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 5 }, { windowMs: 3_600_000, max: 20 }])) {
+      return c.json({ ok: true }); // silently drop — same shape as success
+    }
+    const email = str((await safeJson(c)).email);
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      const ctx = await service.lookupForReset(email);
+      if (ctx) {
+        const { token } = signReset(ctx.merchantId, ctx.fingerprint, deps.authSecret, RESET_TTL_MS, Date.now());
+        const link = `${baseFromReq(c)}/reset?token=${encodeURIComponent(token)}`;
+        try {
+          await deps.mailer.send({
+            to: email.trim(),
+            subject: "Reset your Bouncr password",
+            html: resetEmailHtml(ctx.name, link),
+            text: `Reset your Bouncr password (link expires in 1 hour):\n\n${link}\n\nIf you didn't request this, ignore this email.`,
+          });
+        } catch (err) {
+          console.error("[forgot-password] mail send failed:", msg(err));
+        }
+      }
+    }
+    return c.json({ ok: true });
+  });
+
+  // Complete a reset: verify the emailed token, set the new password.
+  app.post("/v1/auth/reset-password", async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 10 }])) {
+      return c.json({ error: "too many attempts, slow down", code: "conflict" }, 429);
+    }
+    const b = await safeJson(c);
+    const v = verifyReset(str(b.token) ?? "", deps.authSecret, Date.now());
+    if (!v) return c.json({ error: "this reset link is invalid or has expired", code: "bad_request" }, 400);
+    await service.resetPassword(v.merchantId, v.fingerprint, str(b.new_password) ?? "");
     return c.json({ ok: true });
   });
 
@@ -483,6 +527,10 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
   app.get("/dashboard", (c) => c.html(DASHBOARD_HTML)); // merchant dashboard (Spec §11)
   app.get("/signup", (c) => c.html(ONBOARD_HTML)); // merchant onboarding wizard (Spec §9)
   app.get("/start", (c) => c.html(ONBOARD_HTML));
+  // One page for the whole reset flow: with ?token it sets a new password,
+  // without it asks for the email to send a link to.
+  app.get("/reset", (c) => c.html(RESET_HTML));
+  app.get("/forgot", (c) => c.html(RESET_HTML));
   app.get("/embed.js", (c) => {
     c.header("content-type", "application/javascript; charset=utf-8");
     return c.body(EMBED_JS);
@@ -516,6 +564,23 @@ function baseFromReq(c: Context): string {
   } catch {
     return "http://localhost:8787";
   }
+}
+
+/** HTML-escape for safe interpolation into the reset email. */
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!);
+}
+
+/** Branded password-reset email body. The link is the only secret; expires in 1h. */
+function resetEmailHtml(name: string, link: string): string {
+  return `<!doctype html><html><body style="margin:0;background:#0B0B12;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#E5E7EB">
+  <div style="max-width:460px;margin:0 auto;padding:40px 28px">
+    <div style="font-size:20px;font-weight:800;color:#fff;margin-bottom:24px">Bouncr</div>
+    <h1 style="font-size:20px;margin:0 0 12px;color:#fff">Reset your password</h1>
+    <p style="font-size:14px;line-height:1.6;color:#9CA3AF;margin:0 0 24px">Hi ${esc(name)}, click below to choose a new password. This link expires in 1 hour. If you didn't request it, you can ignore this email.</p>
+    <a href="${esc(link)}" style="display:inline-block;background:#7C3AED;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 22px;border-radius:10px">Reset password</a>
+    <p style="font-size:12px;line-height:1.6;color:#6B7280;margin:28px 0 0;word-break:break-all">Or paste this link into your browser:<br><a href="${esc(link)}" style="color:#7C3AED">${esc(link)}</a></p>
+  </div></body></html>`;
 }
 
 // --- shared response shaping ----------------------------------------------

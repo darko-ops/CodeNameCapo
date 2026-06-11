@@ -14,7 +14,7 @@ export const config = { runtime: "nodejs" };
 
 // Module-scope singletons: reused across warm invocations (one PG pool per instance).
 const built = buildServiceFromEnv();
-const app = buildApp({ service: built.service, stripe: built.stripe, apiKey: built.apiKey, authSecret: built.authSecret, stripeLive: !built.sandbox.stripe });
+const app = buildApp({ service: built.service, stripe: built.stripe, apiKey: built.apiKey, authSecret: built.authSecret, stripeLive: !built.sandbox.stripe, mailer: built.mailer });
 
 // Vercel's Node runtime wants a (req, res) listener — NOT a Web `Response` (which it
 // silently ignores → 30s timeout). getRequestListener bridges Hono's fetch to Node,

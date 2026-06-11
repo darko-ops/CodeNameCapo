@@ -18,6 +18,14 @@ function signup(app: any, body: Record<string, unknown> = {}) {
   return post(app, "/v1/signup", { email: `m${++_seq}@test.co`, password: "password123", ...body });
 }
 
+/** Test mailer — records every send so we can read back the reset link/token. */
+class CaptureMailer {
+  sent: { to: string; subject: string; html: string; text?: string }[] = [];
+  async send(msg: { to: string; subject: string; html: string; text?: string }) {
+    this.sent.push(msg);
+  }
+}
+
 function makeApp(apiKey: string | null = null) {
   // Seed the demo merchant with known email/password (dashboard login) and an
   // API key (programmatic / MCP) so both paths work in tests.
@@ -34,7 +42,8 @@ function makeApp(apiKey: string | null = null) {
     negotiator: makeTemplateNegotiator(),
     baseUrl: "http://localhost:8787",
   });
-  return { app: buildApp({ service, stripe, apiKey, authSecret: AUTH_SECRET }), store, stripe, merchantKey, email: DEMO_EMAIL, password: DEMO_PASSWORD };
+  const mailer = new CaptureMailer();
+  return { app: buildApp({ service, stripe, apiKey, authSecret: AUTH_SECRET, mailer }), store, stripe, merchantKey, mailer, email: DEMO_EMAIL, password: DEMO_PASSWORD };
 }
 
 /** Log in with email + password and return a Bearer auth header. */
@@ -498,6 +507,44 @@ describe("merchant dashboard auth (Spec §9)", () => {
     expect((await app.request("/v1/auth/me", { headers: auth })).status).toBe(200);
   });
 
+  it("forgot → reset: emails a single-use link that sets a new password", async () => {
+    const { app, mailer, email, password } = makeApp();
+
+    // Unknown email → still 200 (no enumeration) and no mail sent.
+    expect((await post(app, "/v1/auth/forgot-password", { email: "nobody@nope.test" })).status).toBe(200);
+    expect(mailer.sent).toHaveLength(0);
+
+    // Real email → 200 and exactly one reset email captured.
+    expect((await post(app, "/v1/auth/forgot-password", { email })).status).toBe(200);
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]!.to).toBe(email);
+
+    // Pull the token out of the emailed link.
+    const token = /\/reset\?token=([^"&\s]+)/.exec(mailer.sent[0]!.html)![1]!;
+    expect(token).toBeTruthy();
+
+    // Bad token → 400; short password → 400.
+    expect((await post(app, "/v1/auth/reset-password", { token: "garbage", new_password: "longenough1" })).status).toBe(400);
+    expect((await post(app, "/v1/auth/reset-password", { token: decodeURIComponent(token), new_password: "short" })).status).toBe(400);
+
+    // Valid reset → 200; old password dead, new one logs in.
+    expect((await post(app, "/v1/auth/reset-password", { token: decodeURIComponent(token), new_password: "resetpass99" })).status).toBe(200);
+    expect((await post(app, "/v1/auth/login", { email, password })).status).toBe(401);
+    expect((await post(app, "/v1/auth/login", { email, password: "resetpass99" })).status).toBe(200);
+
+    // The link is single-use — re-using it now fails (fingerprint changed).
+    expect((await post(app, "/v1/auth/reset-password", { token: decodeURIComponent(token), new_password: "another123" })).status).toBe(400);
+  });
+
+  it("serves the reset page at /reset and /forgot", async () => {
+    const { app } = makeApp();
+    for (const path of ["/reset", "/forgot", "/reset?token=abc"]) {
+      const r = await app.request(path);
+      expect(r.status).toBe(200);
+      expect(r.headers.get("content-type")).toContain("text/html");
+    }
+  });
+
   it("scopes data to the token's merchant — no cross-merchant reads", async () => {
     // Two merchants, each with their own plan, sharing one app/store.
     const planA = { ...demoPlan(), id: "plan_a", planKey: "a", merchantId: "m_a" };
@@ -519,6 +566,7 @@ describe("merchant dashboard auth (Spec §9)", () => {
       stripe: new FakeStripeGateway(),
       apiKey: null,
       authSecret: AUTH_SECRET,
+      mailer: new CaptureMailer(),
     });
 
     const authA = await login(app, "m_a@test.co", "password123");
@@ -577,7 +625,7 @@ describe("dashboard + analytics + Connect endpoints (Spec §7, §11, §12)", () 
     // demo merchant needed for closeDeal lookups, but no deal here
     const stripe = new FakeStripeGateway();
     const service = new BouncrService({ store, stripe, negotiator: makeTemplateNegotiator(), baseUrl: "http://x" });
-    const app = buildApp({ service, stripe, apiKey: null, authSecret: AUTH_SECRET });
+    const app = buildApp({ service, stripe, apiKey: null, authSecret: AUTH_SECRET, mailer: new CaptureMailer() });
 
     const s = await startSession(app);
     await post(app, `/v1/sessions/${s.id}/messages`, { message: "$1" }, tok(s.token));
