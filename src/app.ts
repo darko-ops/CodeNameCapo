@@ -389,7 +389,11 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
 function baseFromReq(c: Context): string {
   try {
     const u = new URL(c.req.url);
-    return `${u.protocol}//${u.host}`;
+    // Behind Vercel's edge the internal request is http; trust x-forwarded-proto
+    // and the real host so embed snippets / return URLs come out https.
+    const proto = c.req.header("x-forwarded-proto")?.split(",")[0]?.trim() || u.protocol.replace(":", "");
+    const host = c.req.header("x-forwarded-host")?.split(",")[0]?.trim() || c.req.header("host") || u.host;
+    return `${proto}://${host}`;
   } catch {
     return "http://localhost:8787";
   }
