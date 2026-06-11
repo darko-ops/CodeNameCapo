@@ -3,198 +3,265 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Bouncr — merchant dashboard</title>
+<title>Bouncr dashboard</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDEwMCAxMDAiIHJvbGU9ImltZyIgYXJpYS1sYWJlbD0iVGhlQm91bmNyIj4KICA8cmVjdCB4PSI2IiB5PSI2IiB3aWR0aD0iODgiIGhlaWdodD0iODgiIHJ4PSIyNCIgZmlsbD0iIzdDM0FFRCIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iMzQiIHI9IjExIiBmaWxsPSIjMEIwQjEyIi8+CiAgPHBhdGggZD0iTTI2IDY1IEw3NCA1MyIgc3Ryb2tlPSIjMEIwQjEyIiBzdHJva2Utd2lkdGg9IjEyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIGZpbGw9Im5vbmUiLz4KICA8cGF0aCBkPSJNMjYgNTMgTDc0IDY1IiBzdHJva2U9IiMwQjBCMTIiIHN0cm9rZS13aWR0aD0iMTIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgZmlsbD0ibm9uZSIvPgo8L3N2Zz4K" />
 <style>
-  :root { --accent: #7C3AED; --mint: #34D399; --ok: #34D399; --warn: #d9941f; --err: #f87171; --line: #23232e; --muted: #8b8b99; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; color: #ECECF1; background: #0B0B12; }
-  .wrap { max-width: 1000px; margin: 0 auto; padding: 28px 22px 64px; }
-  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.4px; }
-  .sub { color: var(--muted); margin: 0 0 20px; }
-  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 22px; }
-  input, select { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; background: #14141c; color: var(--text); cursor: pointer; }
-  select { max-width: 240px; }
-  .erow { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
-  .erow > div { flex: 1; min-width: 130px; }
-  #edit-form label { display: block; font-size: 11px; color: var(--muted); margin: 8px 0 4px; }
-  #edit-form input, #edit-form select { width: 100%; max-width: none; cursor: text; }
-  #edit-form select { cursor: pointer; }
-  .keybox { background: #0d0d13; border: 1px solid rgba(124,58,237,.4); border-radius: 11px; padding: 14px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
-  .keybox .keyval { word-break: break-all; line-height: 1.55; }
-  .keybox .copy { margin-top: 12px; padding: 5px 14px; font-size: 12px; }
-  .warn { font-size: 12.5px; color: var(--accent2); margin-top: 8px; }
-  input::placeholder { color: #5a5a6a; }
-  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
-  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 22px; }
-  .card { background: #15151f; border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
-  .card h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 700; }
-  .big { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; }
-  .panel { background: #15151f; border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
-  .panel h2 { margin: 0 0 12px; font-size: 16px; }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-  .badge.ok { background: rgba(52,211,153,.12); color: var(--ok); } .badge.no { background: rgba(248,113,113,.12); color: var(--err); }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #1d1d27; }
-  th { color: var(--muted); font-weight: 600; font-size: 12px; }
-  tr.session { cursor: pointer; } tr.session:hover { background: #1a1a22; }
-  .pill { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: #1d1d27; }
-  .pill.settled { background: rgba(52,211,153,.12); color: var(--ok); } .pill.walked { background: rgba(248,113,113,.12); color: var(--err); }
-  .pill.accepted { background: rgba(124,58,237,.14); color: #a78bfa; }
-  .tactics div { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
-  .tactics .tb { height: 10px; background: var(--accent); border-radius: 4px; }
-  #drawer { position: fixed; top: 0; right: 0; width: 420px; max-width: 92vw; height: 100vh; background: #14141c; border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(0,0,0,.5); transform: translateX(100%); transition: transform .2s; overflow-y: auto; padding: 18px; }
-  #drawer.open { transform: none; }
-  .msg { padding: 8px 11px; border-radius: 12px; margin: 6px 0; max-width: 85%; white-space: pre-wrap; }
-  .msg.user { background: var(--accent); color: #fff; margin-left: auto; } .msg.bot { background: #1d1d27; }
-  .meta { font-size: 11px; color: var(--muted); margin: 1px 4px 8px; }
-  canvas { width: 100%; max-width: 100%; }
-  .err { color: var(--err); }
-  .lint { font-size: 13px; } .lint .e { color: var(--err); } .lint .w { color: var(--warn); }
-  /* logged-out gate — the dashboard is blocked until you log in or sign up */
-  .gate { max-width: 440px; margin: 48px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 28px; text-align: center; }
-  .gate h2 { margin: 0 0 6px; font-size: 20px; }
-  .gate .gate-sub { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; }
-  .gate-row { display: flex; gap: 8px; }
-  .gate-row input { flex: 1; max-width: none; }
-  .gate-foot { margin-top: 16px; font-size: 13px; color: var(--muted); }
-  .gate-foot a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  :root {
+    --accent:#7C3AED; --accent2:#a78bfa; --mint:#34D399; --ok:#34D399; --warn:#d9941f; --err:#f87171;
+    --bg:#0B0B12; --panel:#15151f; --line:#23232e; --text:#F5F3FF; --muted:#9a9aa8;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:inherit; text-decoration:none; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:9px; padding:9px 15px; font:inherit; font-weight:600; cursor:pointer; transition:.15s; }
+  button:hover { background:#8b5cf6; } button:disabled { opacity:.55; cursor:default; }
+  .ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  .ghost:hover { border-color:var(--accent); background:rgba(124,58,237,.08); }
+  .sm { padding:7px 12px; font-size:13.5px; }
+  .meta { font-size:12px; color:var(--muted); }
+  .err { color:var(--err); }
+
+  /* header */
+  .topbar { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:12px; padding:11px 22px; background:rgba(11,11,18,.8); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  .topbar .brand svg { width:30px; height:30px; display:block; }
+  .topbar .grow { flex:1; }
+  select#plan { background:#14141c; border:1px solid var(--line); color:var(--text); border-radius:9px; padding:8px 12px; font:inherit; cursor:pointer; max-width:260px; }
+  .who-chip { font-size:13px; color:var(--muted); padding:5px 12px; border:1px solid var(--line); border-radius:999px; }
+  .icon { background:transparent; border:1px solid var(--line); color:var(--text); border-radius:9px; width:34px; height:34px; font-size:17px; line-height:1; cursor:pointer; padding:0; }
+  .icon:hover { border-color:var(--accent); }
+
+  /* layout */
+  .content { max-width:1040px; margin:0 auto; padding:26px 22px 80px; }
+  section { animation:fade .2s ease; }
+  @keyframes fade { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  .seclabel { font-size:12px; text-transform:uppercase; letter-spacing:1.2px; color:var(--muted); font-weight:700; margin:24px 0 12px; }
+  .seclabel:first-child { margin-top:0; }
+
+  /* cards */
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px 20px; margin-bottom:18px; }
+  .card > h3 { margin:0 0 14px; font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); font-weight:700; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .grid-2 .card { margin:0; }
+
+  /* kpis */
+  .kpis { display:grid; gap:14px; margin-bottom:6px; }
+  .kpis.hero { grid-template-columns:repeat(auto-fit, minmax(165px,1fr)); }
+  .kpis.sub { grid-template-columns:repeat(auto-fit, minmax(118px,1fr)); margin-top:14px; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; }
+  .kpi h4 { margin:0 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); font-weight:700; }
+  .kpi .big { font-size:30px; font-weight:800; letter-spacing:-.6px; line-height:1.05; }
+  .kpis.sub .kpi { padding:13px 15px; } .kpis.sub .big { font-size:21px; font-weight:700; }
+  .kpi.accent .big { color:var(--accent2); } .kpi.mint .big { color:var(--mint); }
+
+  /* chart */
+  .chart canvas { width:100%; display:block; }
+
+  /* tactics */
+  .tactics div { display:flex; align-items:center; gap:10px; margin:8px 0; font-size:13px; }
+  .tactics .tname { width:120px; flex:0 0 auto; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tactics .tb { height:9px; background:linear-gradient(90deg,var(--accent),var(--accent2)); border-radius:5px; }
+
+  /* table */
+  .tablewrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid #1d1d27; }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  tr.session { cursor:pointer; } tr.session:hover { background:#1a1a22; }
+  .pill { font-size:11px; padding:2px 9px; border-radius:999px; background:#1d1d27; font-weight:600; }
+  .pill.settled { background:rgba(52,211,153,.14); color:var(--ok); }
+  .pill.walked, .pill.expired { background:rgba(248,113,113,.12); color:var(--err); }
+  .pill.accepted, .pill.open { background:rgba(124,58,237,.16); color:var(--accent2); }
+
+  /* settlement / badges */
+  .badge { display:inline-block; padding:3px 11px; border-radius:999px; font-size:12px; font-weight:700; }
+  .badge.ok { background:rgba(52,211,153,.14); color:var(--ok); }
+  .badge.no { background:rgba(248,113,113,.12); color:var(--err); }
+  .lint { font-size:13px; margin-top:12px; } .lint .e { color:var(--err); } .lint .w { color:var(--warn); }
+  .row-line { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+
+  /* forms */
+  .frow { display:flex; gap:14px; flex-wrap:wrap; }
+  .frow > div { flex:1; min-width:130px; }
+  form label { display:block; font-size:11.5px; color:var(--muted); margin:12px 0 5px; }
+  form input, form select { width:100%; background:#0e0e14; border:1px solid var(--line); border-radius:9px; padding:10px 11px; font:inherit; color:var(--text); }
+  form input:focus, form select:focus { outline:none; border-color:var(--accent); }
+  form select { cursor:pointer; }
+  .hr { border:0; border-top:1px solid var(--line); margin:20px 0 16px; }
+
+  /* keybox */
+  .keybox { background:#0d0d13; border:1px solid rgba(124,58,237,.4); border-radius:11px; padding:14px; font-family:ui-monospace,Menlo,monospace; font-size:13px; }
+  .keybox .keyval { word-break:break-all; line-height:1.55; }
+  .keybox .copy { margin-top:12px; padding:5px 14px; font-size:12px; }
+  .warn { font-size:12.5px; color:var(--accent2); margin-top:8px; }
+
+  /* drawer */
+  #drawer { position:fixed; top:0; right:0; width:440px; max-width:92vw; height:100vh; background:#101019; border-left:1px solid var(--line); box-shadow:-16px 0 40px rgba(0,0,0,.5); transform:translateX(100%); transition:transform .22s; overflow-y:auto; padding:20px; z-index:50; }
+  #drawer.open { transform:none; }
+  .msg { padding:9px 12px; border-radius:12px; margin:6px 0; max-width:85%; white-space:pre-wrap; font-size:14px; }
+  .msg.user { background:var(--accent); color:#fff; margin-left:auto; } .msg.bot { background:#1d1d27; }
+
+  /* gate */
+  .gate { max-width:430px; margin:9vh auto; background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:32px 28px; text-align:center; }
+  .gate .glogo { width:44px; height:44px; margin:0 auto 14px; display:block; }
+  .gate h2 { margin:0 0 6px; font-size:21px; letter-spacing:-.3px; }
+  .gate .gate-sub { margin:0 0 20px; color:var(--muted); font-size:13.5px; }
+  .gate-row { display:flex; gap:8px; }
+  .gate-row input { flex:1; background:#0e0e14; border:1px solid var(--line); border-radius:9px; padding:11px 12px; color:var(--text); font:inherit; }
+  .gate-foot { margin-top:18px; font-size:13px; color:var(--muted); }
+  .gate-foot a { color:var(--accent2); font-weight:600; }
+
+  @media (max-width:720px) { .grid-2 { grid-template-columns:1fr; } .topbar { flex-wrap:wrap; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Bouncr WTP dashboard</h1>
-  <p class="sub">Your true demand curve, from your own negotiations.</p>
 
-  <form class="gate" id="login" autocomplete="off">
-    <h2>Sign in to your dashboard</h2>
-    <p class="gate-sub">Enter your merchant API key, or create an account to get one.</p>
-    <div class="gate-row">
-      <input id="key" type="password" autocomplete="current-password" placeholder="merchant API key (bk_…)" />
-      <button id="login-btn" type="submit">Log in</button>
-    </div>
-    <span id="login-status" class="meta"></span>
-    <div class="gate-foot">New here? <a href="/signup">Create an account →</a></div>
-  </form>
-
-  <div id="app" style="display:none">
-  <div class="bar" id="authed">
-    <input id="base" placeholder="API base" size="22" />
-    <select id="plan" title="Your plans"></select>
-    <button id="refresh">Refresh</button>
-    <span class="meta">signed in as <b id="who" style="color:var(--text)"></b></span>
-    <button class="ghost" id="logout">Log out</button>
-    <span id="status"></span>
-    <span class="meta" id="no-plans" style="display:none">No plans yet — <a href="/signup" style="color:var(--accent)">create one →</a></span>
+<!-- logged-out gate -->
+<form class="gate" id="login" autocomplete="off">
+  <svg class="glogo" viewBox="0 0 100 100" aria-hidden="true"><rect x="8" y="8" width="84" height="84" rx="24" fill="#7C3AED"/><circle cx="50" cy="34" r="10" fill="#0B0B12"/><path d="M27 64 L73 53" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/><path d="M27 53 L73 64" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/></svg>
+  <h2>Sign in to your dashboard</h2>
+  <p class="gate-sub">Enter your merchant API key, or create an account to get one.</p>
+  <div class="gate-row">
+    <input id="key" type="password" autocomplete="current-password" placeholder="merchant API key (bk_…)" />
+    <button id="login-btn" type="submit">Log in</button>
   </div>
+  <span id="login-status" class="meta"></span>
+  <div class="gate-foot">New here? <a href="/signup">Create an account →</a></div>
+</form>
 
-  <div class="panel" id="connect-panel">
-    <h2>Settlement</h2>
-    <div>Stripe Connect: <span id="connect-badge" class="badge no">checking…</span>
-      <button class="ghost" id="connect-btn" style="margin-left:10px">Connect Stripe</button></div>
-    <div class="meta" id="connect-note" style="margin-top:8px"></div>
-    <div style="margin-top:10px">Bouncr take-rate: <b id="take-rate" style="color:var(--accent)">—</b>
-      <span class="meta" id="take-note"></span></div>
-    <div class="lint" id="lint" style="margin-top:10px"></div>
-  </div>
+<!-- dashboard -->
+<div id="app" style="display:none">
+  <header class="topbar">
+    <a class="brand" href="/" title="thebouncr"><svg viewBox="0 0 100 100" aria-hidden="true"><rect x="8" y="8" width="84" height="84" rx="24" fill="#7C3AED"/><circle cx="50" cy="34" r="10" fill="#0B0B12"/><path d="M27 64 L73 53" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/><path d="M27 53 L73 64" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/></svg></a>
+    <select id="plan" title="Switch plan"></select>
+    <span class="meta" id="no-plans" style="display:none">No plans yet, <a href="/signup" style="color:var(--accent2)">create one →</a></span>
+    <div class="grow"></div>
+    <span id="status" class="meta"></span>
+    <button class="icon" id="refresh" title="Refresh">⟳</button>
+    <span class="who-chip" id="who"></span>
+    <button class="ghost sm" id="settings-toggle">Settings</button>
+    <button class="ghost sm" id="logout">Log out</button>
+  </header>
 
-  <details class="panel" id="account-panel">
-    <summary style="cursor:pointer; font-weight:600; font-size:15px">Account &amp; settings</summary>
-    <div style="margin-top:12px">
-      <p class="meta" style="margin:0 0 12px">Your API key is your dashboard login. Rotate it if it may be exposed, the old key stops working immediately. Your current session stays signed in.</p>
-      <button class="ghost" id="rotate-btn">Rotate API key</button>
-      <div class="keybox" id="newkey-box" style="display:none; margin-top:14px"><span class="keyval" id="newkey-val"></span><button class="ghost copy" id="copy-newkey" type="button">Copy</button></div>
-      <div class="warn" id="rotate-warn" style="display:none">⚠ Save this now, it's shown once and your old key no longer works.</div>
+  <main class="content">
+    <!-- OVERVIEW -->
+    <section id="view-overview">
+      <div class="seclabel">Outcomes</div>
+      <div class="kpis hero" id="closing"></div>
+      <div class="kpis sub" id="funnel"></div>
 
-      <hr style="border:0; border-top:1px solid var(--line); margin:20px 0 14px" />
-      <p class="meta" style="margin:0 0 6px; color:var(--err); font-weight:700">Danger zone</p>
-      <p class="meta" style="margin:0 0 12px">Permanently delete this account and everything under it (plans, negotiations, deals). This cannot be undone.</p>
-      <button class="ghost" id="delete-btn" style="color:var(--err); border-color:rgba(248,113,113,.45)">Delete account</button>
-      <span class="meta" id="delete-status"></span>
-    </div>
-  </details>
+      <div class="seclabel">Willingness to pay</div>
+      <div class="card chart">
+        <canvas id="hist" height="220"></canvas>
+        <div class="meta" id="hist-legend" style="margin-top:8px"></div>
+      </div>
 
-  <details class="panel" id="edit-panel">
-    <summary style="cursor:pointer; font-weight:600; font-size:15px">Edit this plan</summary>
-    <form id="edit-form" style="margin-top:14px">
-      <div class="erow">
-        <div><label>Product name</label><input id="e-product" /></div>
-        <div><label>Vini's personality</label>
-          <select id="e-style"><option value="sassy">Sassy</option><option value="playful">Playful</option><option value="deadpan">Deadpan</option><option value="professional">Professional</option></select>
+      <div class="grid-2">
+        <div class="card"><h3>Tactics used</h3><div class="tactics" id="tactics"></div></div>
+        <div class="card"><h3>Recent negotiations</h3>
+          <div class="tablewrap"><table><thead><tr><th>User</th><th>Status</th><th>Round</th><th>Ask</th></tr></thead>
+            <tbody id="sessions"></tbody></table></div>
         </div>
       </div>
-      <div class="erow">
-        <div><label>List $/mo</label><input id="e-list" type="number" min="1" step="0.01" /></div>
-        <div><label>Floor (cost) $/mo</label><input id="e-floor" type="number" min="1" step="0.01" /></div>
-        <div><label>Target $/mo</label><input id="e-target" type="number" min="1" step="0.01" /></div>
-        <div><label>Take-rate % <span style="opacity:.6">(blank = default)</span></label><input id="e-fee" type="number" min="0" max="100" step="0.1" /></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" hidden>
+      <div class="seclabel">Plan</div>
+      <div class="card" id="edit-panel">
+        <h3>Edit this plan</h3>
+        <form id="edit-form">
+          <div class="frow">
+            <div><label>Product name</label><input id="e-product" /></div>
+            <div><label>Vini's personality</label>
+              <select id="e-style"><option value="sassy">Sassy</option><option value="playful">Playful</option><option value="deadpan">Deadpan</option><option value="professional">Professional</option></select>
+            </div>
+          </div>
+          <div class="frow">
+            <div><label>List $/mo</label><input id="e-list" type="number" min="1" step="0.01" /></div>
+            <div><label>Floor (cost) $/mo</label><input id="e-floor" type="number" min="1" step="0.01" /></div>
+            <div><label>Target $/mo</label><input id="e-target" type="number" min="1" step="0.01" /></div>
+            <div><label>Take-rate % <span style="opacity:.6">(blank = default)</span></label><input id="e-fee" type="number" min="0" max="100" step="0.1" /></div>
+          </div>
+          <div class="lint err" id="edit-err" style="margin-top:10px"></div>
+          <div class="row-line" style="margin-top:16px">
+            <button type="submit" id="edit-save">Save changes</button>
+            <button type="button" class="ghost" id="toggle-active">Deactivate plan</button>
+            <span class="meta" id="edit-status"></span>
+          </div>
+          <div class="lint" id="lint" style="margin-top:14px"></div>
+        </form>
       </div>
-      <div class="lint err" id="edit-err" style="margin-top:8px"></div>
-      <div style="display:flex; gap:10px; align-items:center">
-        <button type="submit" id="edit-save">Save changes</button>
-        <button type="button" class="ghost" id="toggle-active">Deactivate plan</button>
-        <span class="meta" id="edit-status"></span>
+
+      <div class="seclabel">Settlement</div>
+      <div class="card">
+        <h3>Stripe &amp; take-rate</h3>
+        <div class="row-line">Stripe Connect: <span id="connect-badge" class="badge no">checking…</span>
+          <button class="ghost sm" id="connect-btn">Connect Stripe</button></div>
+        <div class="meta" id="connect-note" style="margin-top:8px"></div>
+        <div style="margin-top:14px">Bouncr take-rate: <b id="take-rate" style="color:var(--accent2)">—</b>
+          <span class="meta" id="take-note"></span></div>
       </div>
-    </form>
-  </details>
 
-  <div class="grid" id="funnel"></div>
+      <div class="seclabel">Account</div>
+      <div class="card">
+        <h3>API key</h3>
+        <p class="meta" style="margin:0 0 12px">Your API key is your dashboard login. Rotate it if it may be exposed; the old key stops working immediately and your current session stays signed in.</p>
+        <button class="ghost" id="rotate-btn">Rotate API key</button>
+        <div class="keybox" id="newkey-box" style="display:none; margin-top:14px"><span class="keyval" id="newkey-val"></span><button class="ghost copy" id="copy-newkey" type="button">Copy</button></div>
+        <div class="warn" id="rotate-warn" style="display:none">⚠ Save this now, it's shown once and your old key no longer works.</div>
 
-  <div class="panel">
-    <h2>Offer distribution</h2>
-    <canvas id="hist" height="220"></canvas>
-    <div class="meta" id="hist-legend"></div>
-  </div>
-
-  <div class="grid" id="closing"></div>
-
-  <div class="panel">
-    <h2>Tactics used</h2>
-    <div class="tactics" id="tactics"></div>
-  </div>
-
-  <div class="panel">
-    <h2>Recent negotiations</h2>
-    <table><thead><tr><th>User</th><th>Status</th><th>Round</th><th>Ask</th></tr></thead>
-      <tbody id="sessions"></tbody></table>
-  </div>
-  </div><!-- /#app -->
+        <hr class="hr" />
+        <p class="meta" style="margin:0 0 6px; color:var(--err); font-weight:700">Danger zone</p>
+        <p class="meta" style="margin:0 0 12px">Permanently delete this account and everything under it (plans, negotiations, deals). This cannot be undone.</p>
+        <button class="ghost" id="delete-btn" style="color:var(--err); border-color:rgba(248,113,113,.45)">Delete account</button>
+        <span class="meta" id="delete-status"></span>
+      </div>
+    </section>
+  </main>
 </div>
 
-<div id="drawer"><button class="ghost" onclick="document.getElementById('drawer').classList.remove('open')">Close</button>
-  <h2 id="drawer-title" style="margin-top:12px"></h2><div id="transcript"></div></div>
+<div id="drawer"><button class="ghost sm" onclick="document.getElementById('drawer').classList.remove('open')">Close</button>
+  <h3 id="drawer-title" style="margin:14px 0 12px"></h3><div id="transcript"></div></div>
 
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  $("base").value = location.origin;
   const TKEY = "bouncr_dash_token";
   let token = localStorage.getItem(TKEY) || null;
-  let MERCHANT = null; // id of the signed-in merchant (from the token)
-  let PLANS = [];      // the merchant's plans (for the dropdown + edit form)
-  ["base","plan"].forEach((id) => { const v = localStorage.getItem("bouncr_dash_" + id); if (v) $(id).value = v; });
-  function persist() { ["base","plan"].forEach((id) => localStorage.setItem("bouncr_dash_" + id, $(id).value)); }
+  let MERCHANT = null;     // signed-in merchant id (from the token)
+  let PLANS = [];          // the merchant's plans
+  let LAST_A = null;       // last analytics payload (to re-draw the chart on view switch)
 
+  const base = () => location.origin;
   const authHeaders = () => (token ? { authorization: "Bearer " + token } : {});
-  const base = () => $("base").value.replace(/\/$/, "");
   const api = (path) => fetch(base() + path, { headers: authHeaders() }).then(guard);
   const apiPost = (path, body) =>
     fetch(base() + path, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) }).then(guard);
-  // A 401 anywhere means the session expired/invalid — drop back to login.
-  function guard(res) { if (res.status === 401) { logout(); throw new Error("session expired — log in again"); } return res; }
+  function guard(res) { if (res.status === 401) { logout(); throw new Error("session expired, log in again"); } return res; }
 
+  // --- views ---------------------------------------------------------------
+  function setView(v) {
+    const settings = v === "settings";
+    $("view-overview").hidden = settings;
+    $("view-settings").hidden = !settings;
+    $("settings-toggle").textContent = settings ? "← Overview" : "Settings";
+    if (!settings && LAST_A) renderHist(LAST_A); // canvas needs to be visible to size
+    window.scrollTo(0, 0);
+  }
+  $("settings-toggle").onclick = () => setView($("view-settings").hidden ? "settings" : "overview");
+
+  // --- auth ----------------------------------------------------------------
   function showAuthed(name) {
     MERCHANT = name && name.id ? name.id : MERCHANT;
-    $("who").textContent = (name && name.name) ? name.name : MERCHANT || "";
-    $("login").style.display = "none"; // hide the gate
-    $("app").style.display = "";       // reveal the dashboard
-    $("authed").style.display = "flex";
+    $("who").textContent = (name && name.name) ? name.name : (MERCHANT || "");
+    $("login").style.display = "none";
+    $("app").style.display = "";
+    setView("overview");
   }
   function logout() {
     token = null; MERCHANT = null; localStorage.removeItem(TKEY);
-    $("app").style.display = "none";   // block the dashboard
-    $("login").style.display = "";     // show the gate (log in / sign up)
+    $("app").style.display = "none";
+    $("login").style.display = "";
     $("key").value = "";
   }
 
@@ -204,9 +271,7 @@
     if (!key) return;
     $("login-status").textContent = "signing in…";
     try {
-      const r = await fetch(base() + "/v1/auth/login", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }),
-      });
+      const r = await fetch(base() + "/v1/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "login failed");
       token = d.token; localStorage.setItem(TKEY, token);
@@ -216,35 +281,28 @@
     } catch (err) { $("login-status").innerHTML = '<span class="err">' + err.message + "</span>"; }
   });
   $("logout").onclick = logout;
+  $("refresh").onclick = load;
 
-  // Delete account — permanent, double-confirmed, then drops back to the gate.
   $("delete-btn").onclick = async () => {
     if (!confirm("Permanently delete this account and ALL plans, negotiations, and data? This cannot be undone.")) return;
     if ((prompt('Type "DELETE" to confirm.') || "").trim().toUpperCase() !== "DELETE") return;
     $("delete-btn").disabled = true; $("delete-status").textContent = "deleting…";
     try {
       const r = guard(await fetch(base() + "/v1/account", { method: "DELETE", headers: authHeaders() }));
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "could not delete account");
-      logout();
-      alert("Your account has been deleted.");
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "could not delete account");
+      logout(); alert("Your account has been deleted.");
     } catch (e) { $("delete-status").textContent = ""; alert(e.message); }
     finally { $("delete-btn").disabled = false; }
   };
 
-  // Rotate the merchant API key — shows the new one once; old key dies immediately.
   $("rotate-btn").onclick = async () => {
     if (!confirm("Rotate your API key? Your current key will stop working immediately.")) return;
     $("rotate-btn").disabled = true;
     try {
       const r = guard(await fetch(base() + "/v1/auth/rotate-key", { method: "POST", headers: authHeaders() }));
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "rotation failed");
-      $("newkey-val").textContent = d.key;
-      $("newkey-box").style.display = "block";
-      $("rotate-warn").style.display = "block";
-    } catch (e) { alert(e.message); }
-    finally { $("rotate-btn").disabled = false; }
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "rotation failed");
+      $("newkey-val").textContent = d.key; $("newkey-box").style.display = "block"; $("rotate-warn").style.display = "block";
+    } catch (e) { alert(e.message); } finally { $("rotate-btn").disabled = false; }
   };
   $("copy-newkey").onclick = (e) => {
     e.preventDefault();
@@ -252,15 +310,14 @@
     e.target.textContent = "Copied"; setTimeout(() => (e.target.textContent = "Copy"), 1200);
   };
 
-  // Populate the plan dropdown from the merchant's own plans (scoped server-side).
+  // --- plans ---------------------------------------------------------------
   async function loadPlans() {
     const sel = $("plan");
     try {
       const r = await (await api("/v1/plans")).json();
-      const plans = r.plans || [];
-      PLANS = plans;
+      const plans = r.plans || []; PLANS = plans;
       sel.innerHTML = "";
-      if (!plans.length) { $("no-plans").style.display = "inline"; sel.style.display = "none"; $("edit-panel").style.display = "none"; return false; }
+      if (!plans.length) { $("no-plans").style.display = ""; sel.style.display = "none"; $("edit-panel").style.display = "none"; return false; }
       $("no-plans").style.display = "none"; sel.style.display = ""; $("edit-panel").style.display = "";
       for (const p of plans) {
         const o = document.createElement("option");
@@ -276,15 +333,11 @@
     } catch (_) { return false; }
   }
 
-  // Populate the edit form from the currently-selected plan.
   function fillEdit(id) {
-    const p = PLANS.find((x) => x.id === id);
-    if (!p) return;
+    const p = PLANS.find((x) => x.id === id); if (!p) return;
     $("e-product").value = (p.persona && p.persona.product_name) || "";
     $("e-style").value = (p.persona && p.persona.style) || "sassy";
-    $("e-list").value = p.list_price;
-    $("e-floor").value = p.floor_price;
-    $("e-target").value = p.target_price;
+    $("e-list").value = p.list_price; $("e-floor").value = p.floor_price; $("e-target").value = p.target_price;
     $("e-fee").value = p.application_fee_percent == null ? "" : p.application_fee_percent;
     const tg = $("toggle-active");
     tg.textContent = p.active ? "Deactivate plan" : "Reactivate plan";
@@ -293,24 +346,16 @@
     $("edit-err").textContent = ""; $("edit-status").textContent = "";
   }
 
-  // Deactivate / reactivate the selected plan. Deactivating stops its embed from
-  // accepting new negotiations (the widget can't resolve an inactive plan), but
-  // it stays in the dashboard so it can be turned back on.
   $("toggle-active").onclick = async () => {
-    const p = PLANS.find((x) => x.id === $("plan").value);
-    if (!p) return;
+    const p = PLANS.find((x) => x.id === $("plan").value); if (!p) return;
     const next = !p.active;
     if (!next && !confirm("Deactivate this plan? Its embed will stop accepting new negotiations.")) return;
     $("edit-err").textContent = ""; $("edit-status").textContent = next ? "reactivating…" : "deactivating…";
     try {
-      const r = guard(await fetch(base() + "/v1/plans/" + encodeURIComponent(p.id), {
-        method: "PATCH", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify({ active: next }),
-      }));
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "could not update");
+      const r = guard(await fetch(base() + "/v1/plans/" + encodeURIComponent(p.id), { method: "PATCH", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify({ active: next }) }));
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "could not update");
       $("edit-status").textContent = next ? "reactivated ✓" : "deactivated ✓";
-      await loadPlans();
-      $("plan").value = d.plan.id; fillEdit(d.plan.id); load();
+      await loadPlans(); $("plan").value = d.plan.id; fillEdit(d.plan.id); load();
     } catch (err) { $("edit-status").textContent = ""; $("edit-err").textContent = err.message; }
   };
 
@@ -319,115 +364,95 @@
     $("edit-err").textContent = ""; $("edit-status").textContent = "saving…";
     const numv = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : null; };
     const feeRaw = $("e-fee").value.trim();
-    const body = {
-      product_name: $("e-product").value.trim(),
-      persona_style: $("e-style").value,
-      list_price: numv("e-list"),
-      floor_price: numv("e-floor"),
-      target_price: numv("e-target"),
-      application_fee_percent: feeRaw === "" ? null : parseFloat(feeRaw),
-    };
+    const body = { product_name: $("e-product").value.trim(), persona_style: $("e-style").value, list_price: numv("e-list"), floor_price: numv("e-floor"), target_price: numv("e-target"), application_fee_percent: feeRaw === "" ? null : parseFloat(feeRaw) };
     try {
-      const r = guard(await fetch(base() + "/v1/plans/" + encodeURIComponent($("plan").value), {
-        method: "PATCH", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(body),
-      }));
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "could not save");
+      const r = guard(await fetch(base() + "/v1/plans/" + encodeURIComponent($("plan").value), { method: "PATCH", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(body) }));
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "could not save");
       $("edit-status").textContent = "saved ✓";
-      const keep = d.plan.id;
-      await loadPlans();
-      $("plan").value = keep; fillEdit(keep);
-      load(); // re-render with the new prices / reference lines
+      const keep = d.plan.id; await loadPlans(); $("plan").value = keep; fillEdit(keep); load();
     } catch (err) { $("edit-status").textContent = ""; $("edit-err").textContent = err.message; }
   });
-  // After auth: load the merchant's plans, then render the selected one.
+
   async function enter() {
     const has = await loadPlans();
     if (has) load();
-    else { $("funnel").innerHTML = ""; $("closing").innerHTML = ""; $("sessions").innerHTML = ""; $("status").textContent = ""; }
+    else { $("closing").innerHTML = ""; $("funnel").innerHTML = ""; $("sessions").innerHTML = ""; $("status").textContent = ""; }
   }
-  $("plan").onchange = () => { fillEdit($("plan").value); load(); };
+  $("plan").onchange = () => { localStorage.setItem("bouncr_dash_plan", $("plan").value); fillEdit($("plan").value); load(); };
 
-  function card(label, value) { return `<div class="card"><h3>${label}</h3><div class="big">${value}</div></div>`; }
+  // --- render --------------------------------------------------------------
+  const kpi = (label, value, cls) => `<div class="kpi ${cls || ""}"><h4>${label}</h4><div class="big">${value}</div></div>`;
 
   async function load() {
-    persist();
+    if (!$("plan").value) return;
     $("status").textContent = "loading…";
     try {
       const a = await (await api("/v1/analytics/wtp?plan_id=" + encodeURIComponent($("plan").value))).json();
       if (a.error) throw new Error(a.error);
-      renderFunnel(a); renderClosing(a); renderTactics(a); renderHist(a);
-      await renderSessions();
-      await renderConnect();
-      await renderLint();
+      LAST_A = a;
+      renderClosing(a); renderFunnel(a); renderTactics(a); renderHist(a);
+      await renderSessions(); await renderConnect(); await renderLint();
       $("status").textContent = "";
     } catch (e) { $("status").innerHTML = '<span class="err">' + e.message + "</span>"; }
   }
 
-  function renderFunnel(a) {
-    const f = a.funnel;
-    $("funnel").innerHTML =
-      card("Sessions", f.sessions) + card("Engaged", f.engaged) +
-      card("Accepted", f.accepted) + card("Settled", f.settled) +
-      card("Walk rate", pct(walks(f) , f.sessions));
-  }
   function walks(f) { return Object.values(f.walkByRound).reduce((x, y) => x + y, 0); }
   function pct(n, d) { return d ? Math.round((100 * n) / d) + "%" : "—"; }
 
   function renderClosing(a) {
     const c = a.closing, m = a.monetization || { takeRatePercent: 0, bouncrFee: 0, merchantNet: c.revenue };
     $("closing").innerHTML =
-      card("Median price", c.medianPrice != null ? "$" + c.medianPrice : "—") +
-      card("Avg rounds", c.avgRoundsToClose != null ? c.avgRoundsToClose : "—") +
-      card("Revenue", "$" + c.revenue) +
-      card("Bouncr take (" + m.takeRatePercent + "%)", "$" + m.bouncrFee) +
-      card("Your net", "$" + m.merchantNet) +
-      card("Capture vs list", c.upliftPct != null ? c.upliftPct + "%" : "—");
-    // Settlement panel take-rate line.
+      kpi("Revenue", "$" + c.revenue, "mint") +
+      kpi("Your net", "$" + m.merchantNet, "accent") +
+      kpi("Bouncr take (" + m.takeRatePercent + "%)", "$" + m.bouncrFee) +
+      kpi("Median price", c.medianPrice != null ? "$" + c.medianPrice : "—") +
+      kpi("Capture vs list", c.upliftPct != null ? c.upliftPct + "%" : "—");
     $("take-rate").textContent = m.takeRatePercent + "%";
-    $("take-note").textContent = m.takeRatePercent > 0
-      ? "of each settled invoice → Bouncr (Connect application fee)"
-      : "no platform fee on this plan";
+    $("take-note").textContent = m.takeRatePercent > 0 ? "of each settled invoice goes to Bouncr (Connect application fee)" : "no platform fee on this plan";
+  }
+
+  function renderFunnel(a) {
+    const f = a.funnel;
+    $("funnel").innerHTML =
+      kpi("Sessions", f.sessions) + kpi("Engaged", f.engaged) + kpi("Accepted", f.accepted) +
+      kpi("Settled", f.settled) + kpi("Avg rounds", a.closing.avgRoundsToClose != null ? a.closing.avgRoundsToClose : "—") +
+      kpi("Walk rate", pct(walks(f), f.sessions));
   }
 
   function renderTactics(a) {
     const t = a.tactics, keys = Object.keys(t).sort((x, y) => t[y] - t[x]);
     $("tactics").innerHTML = keys.length
-      ? keys.map((k) => `<div><span style="width:140px;display:inline-block">${k}</span><span class="tb" style="width:${Math.max(6, t[k] * 200)}px"></span><span class="meta">${Math.round(t[k]*100)}%</span></div>`).join("")
+      ? keys.map((k) => `<div><span class="tname">${k}</span><span class="tb" style="width:${Math.max(6, t[k] * 180)}px"></span><span class="meta">${Math.round(t[k]*100)}%</span></div>`).join("")
       : '<span class="meta">No tactics recorded yet.</span>';
   }
 
   function renderHist(a) {
-    const ref = a.reference;
-    const data = a.offers.firstOffers.concat(a.offers.closingPrices);
-    const cv = $("hist"); const ctx = cv.getContext("2d");
-    const W = cv.width = cv.clientWidth * 2, H = cv.height = 440; ctx.scale(1,1);
+    const ref = a.reference, data = a.offers.firstOffers.concat(a.offers.closingPrices);
+    const cv = $("hist"); if (!cv.clientWidth) return; const ctx = cv.getContext("2d");
+    const W = cv.width = cv.clientWidth * 2, H = cv.height = 420;
     ctx.clearRect(0, 0, W, H);
     const max = Math.max(ref.anchor * 1.1, ...(data.length ? data : [ref.anchor]));
     const bins = 24, counts = new Array(bins).fill(0);
-    for (const v of data) { const i = Math.min(bins - 1, Math.floor((v / max) * bins)); counts[i]++; }
-    const peak = Math.max(1, ...counts);
-    const pad = 30, bw = (W - pad * 2) / bins;
-    // bars
+    for (const v of data) counts[Math.min(bins - 1, Math.floor((v / max) * bins))]++;
+    const peak = Math.max(1, ...counts), pad = 34, bw = (W - pad * 2) / bins;
     ctx.fillStyle = "#7C3AED";
     counts.forEach((n, i) => { const h = (n / peak) * (H - pad * 2); ctx.fillRect(pad + i * bw + 2, H - pad - h, bw - 4, h); });
-    // reference lines
     const lineAt = (val, color, label) => {
       const x = pad + (val / max) * (W - pad * 2);
       ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
       ctx.beginPath(); ctx.moveTo(x, pad / 2); ctx.lineTo(x, H - pad); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = color; ctx.font = "20px sans-serif"; ctx.fillText(label, x + 3, pad);
+      ctx.fillStyle = color; ctx.font = "600 20px ui-sans-serif, sans-serif"; ctx.fillText(label, x + 4, pad);
     };
-    lineAt(ref.floor, "#f87171", "floor $" + ref.floor);   // red — the line you never cross
-    lineAt(ref.target, "#34D399", "target $" + ref.target); // mint — the goal / win line
-    lineAt(ref.list, "#8b8b99", "list $" + ref.list);      // gray — reference
-    $("hist-legend").innerHTML = `Bars: first offers + closing prices (n=${data.length}). Lines: floor / target / list.`;
+    lineAt(ref.floor, "#f87171", "floor $" + ref.floor);
+    lineAt(ref.target, "#34D399", "target $" + ref.target);
+    lineAt(ref.list, "#9a9aa8", "list $" + ref.list);
+    $("hist-legend").textContent = `First offers + closing prices (n=${data.length}). Dashed lines: floor / target / list.`;
   }
 
   async function renderSessions() {
     const r = await (await api("/v1/plans/" + encodeURIComponent($("plan").value) + "/sessions")).json();
     const rows = (r.sessions || []).slice(0, 25).map((s) =>
-      `<tr class="session" data-id="${s.id}"><td>${s.end_user_ref}</td><td><span class="pill ${s.status}">${s.status}</span></td><td>${s.round}</td><td>$${s.current_ask}</td></tr>`).join("");
+      `<tr class="session" data-id="${s.id}"><td>${escapeHtml(s.end_user_ref)}</td><td><span class="pill ${s.status}">${s.status}</span></td><td>${s.round}</td><td>$${s.current_ask}</td></tr>`).join("");
     $("sessions").innerHTML = rows || '<tr><td colspan="4" class="meta">No sessions yet.</td></tr>';
     document.querySelectorAll("tr.session").forEach((tr) => tr.onclick = () => openTranscript(tr.dataset.id));
   }
@@ -438,7 +463,7 @@
     $("transcript").innerHTML = (r.turns || []).map((t) => {
       const meta = t.extracted ? `intent: ${t.extracted.intent}${t.extracted.offer_amount != null ? " · offer $" + t.extracted.offer_amount : ""}${t.extracted.tactics && t.extracted.tactics.length ? " · " + t.extracted.tactics.join("/") : ""}`
         : t.action ? "→ " + t.action.type + (t.action.amount != null ? " $" + t.action.amount : "") : "";
-      return `<div class="msg ${t.role === "user" ? "user" : "bot"}">${escapeHtml(t.text)}</div>` + (meta ? `<div class="meta">${meta}</div>` : "");
+      return `<div class="msg ${t.role === "user" ? "user" : "bot"}">${escapeHtml(t.text)}</div>` + (meta ? `<div class="meta" style="margin:0 4px 8px">${meta}</div>` : "");
     }).join("");
     $("drawer").classList.add("open");
   }
@@ -447,13 +472,10 @@
     try {
       const s = await (await api("/v1/merchants/" + encodeURIComponent(MERCHANT) + "/connect")).json();
       const b = $("connect-badge"), note = $("connect-note");
-      // Honest about sandbox: if live Stripe isn't configured, NOTHING here is a
-      // real connection — say so instead of claiming "connected".
       if (!s.live) {
         b.className = "badge no"; b.textContent = "test mode";
         note.textContent = "Stripe isn't live for this deployment yet. Settlement is simulated, no real money moves, and connecting is for testing only.";
-        $("connect-btn").style.display = "none";
-        return;
+        $("connect-btn").style.display = "none"; return;
       }
       note.textContent = "";
       if (s.connected && s.charges_enabled) { b.className = "badge ok"; b.textContent = "connected · ready"; $("connect-btn").style.display = "none"; }
@@ -475,18 +497,15 @@
     if (r.url) window.open(r.url, "_blank"); else alert(r.error || "could not start onboarding");
   };
 
-  function escapeHtml(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
-  $("refresh").onclick = load;
+  function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 
-  // Boot: if we have a token, validate it (and learn the merchant) before showing
-  // the dashboard; otherwise show the login form.
+  // boot
   (async () => {
     if (!token) { logout(); return; }
     try {
       const r = await fetch(base() + "/v1/auth/me", { headers: authHeaders() });
       if (!r.ok) { logout(); return; }
-      showAuthed((await r.json()).merchant);
-      enter();
+      showAuthed((await r.json()).merchant); enter();
     } catch (_) { logout(); }
   })();
 })();
