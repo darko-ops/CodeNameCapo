@@ -419,7 +419,16 @@ export class BouncrService {
 
   async getAnalytics(planId: string) {
     const plan = await this.requirePlan(planId);
-    return computeAnalytics(this.store, plan);
+    const a = await computeAnalytics(this.store, plan);
+    // Attach Bouncr's cut (the service knows the platform default behind any
+    // per-plan override) so the dashboard can show take-rate + net to merchant.
+    const round2 = (x: number) => Math.round((x + Number.EPSILON) * 100) / 100;
+    const takeRatePercent = this.feeFor(plan);
+    const bouncrFee = round2(a.closing.revenue * (takeRatePercent / 100));
+    return {
+      ...a,
+      monetization: { takeRatePercent, bouncrFee, merchantNet: round2(a.closing.revenue - bouncrFee) },
+    };
   }
 
   /** Lint a plan's config (Spec §12). */

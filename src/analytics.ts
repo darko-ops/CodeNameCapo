@@ -32,6 +32,13 @@ export interface Analytics {
     listCounterfactual: number; // settled count × list price
     upliftPct: number | null; // not really uplift — list capture %, signed
   };
+  /** Bouncr's cut — the effective take-rate and what it yields on settled revenue.
+   *  Filled by the service (it knows the platform default behind a plan override). */
+  monetization?: {
+    takeRatePercent: number; // effective Connect application fee % for this plan
+    bouncrFee: number; // revenue × takeRate
+    merchantNet: number; // revenue − bouncrFee
+  };
   tactics: Record<string, number>; // rate in [0,1] across user turns
   /** Renegotiation analytics (Spec §6.4) — repricing tolerance over time. */
   reneg: {

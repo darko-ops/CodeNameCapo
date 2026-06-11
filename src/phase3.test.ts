@@ -161,6 +161,19 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     expect(stripe.checkouts.at(-1)!.applicationFeePercent).toBeNull(); // 0 → no fee
   });
 
+  it("surfaces take-rate, Bouncr fee, and merchant net in the analytics (for the dashboard)", async () => {
+    const { plan, store, service } = setup({}, { applicationFeePercent: 20 });
+    await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "b" });
+    const acc = await service.acceptCurrent(sessionId);
+    await service.handleStripeEvent(completed((await store.getDeal(acc.dealId))!.stripeCheckoutId!));
+
+    const a = await service.getAnalytics(plan.id);
+    expect(a.monetization!.takeRatePercent).toBe(20);
+    expect(a.monetization!.bouncrFee).toBeCloseTo(a.closing.revenue * 0.2, 2);
+    expect(a.monetization!.merchantNet).toBeCloseTo(a.closing.revenue * 0.8, 2);
+  });
+
   it("keeps the fee applied through a renegotiation reprice", async () => {
     const { plan, store, stripe, service } = setup({}, { applicationFeePercent: 15 });
     await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");

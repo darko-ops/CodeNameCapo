@@ -62,6 +62,8 @@
     <h2>Settlement</h2>
     <div>Stripe Connect: <span id="connect-badge" class="badge no">checking…</span>
       <button class="ghost" id="connect-btn" style="margin-left:10px">Connect Stripe</button></div>
+    <div style="margin-top:10px">Bouncr take-rate: <b id="take-rate" style="color:var(--accent)">—</b>
+      <span class="meta" id="take-note"></span></div>
     <div class="lint" id="lint" style="margin-top:10px"></div>
   </div>
 
@@ -136,13 +138,19 @@
   function pct(n, d) { return d ? Math.round((100 * n) / d) + "%" : "—"; }
 
   function renderClosing(a) {
-    const c = a.closing, cur = (a.currency || "usd").toUpperCase();
+    const c = a.closing, m = a.monetization || { takeRatePercent: 0, bouncrFee: 0, merchantNet: c.revenue };
     $("closing").innerHTML =
       card("Median price", c.medianPrice != null ? "$" + c.medianPrice : "—") +
       card("Avg rounds", c.avgRoundsToClose != null ? c.avgRoundsToClose : "—") +
       card("Revenue", "$" + c.revenue) +
-      card("vs list", c.listCounterfactual ? "$" + c.listCounterfactual : "—") +
-      card("Capture", c.upliftPct != null ? c.upliftPct + "%" : "—");
+      card("Bouncr take (" + m.takeRatePercent + "%)", "$" + m.bouncrFee) +
+      card("Your net", "$" + m.merchantNet) +
+      card("Capture vs list", c.upliftPct != null ? c.upliftPct + "%" : "—");
+    // Settlement panel take-rate line.
+    $("take-rate").textContent = m.takeRatePercent + "%";
+    $("take-note").textContent = m.takeRatePercent > 0
+      ? "of each settled invoice → Bouncr (Connect application fee)"
+      : "no platform fee on this plan";
   }
 
   function renderTactics(a) {
