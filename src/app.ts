@@ -103,6 +103,16 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     return c.json({ merchant: info });
   });
 
+  // Rotate the merchant's API key: mints a new one (returned ONCE) and invalidates
+  // the old immediately. The current dashboard token stays valid until it expires.
+  app.post("/v1/auth/rotate-key", dashboardAuth, async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 5 }])) {
+      return c.json({ error: "too many attempts, slow down", code: "conflict" }, 429);
+    }
+    const key = await service.provisionMerchantKey(c.get("merchantId"));
+    return c.json({ key });
+  });
+
   // --- merchant signup / onboarding (Spec §9) ------------------------------
   // Public + rate-limited. Creates a merchant, mints its dashboard key (returned
   // ONCE), and signs them straight in so onboarding can continue.

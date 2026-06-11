@@ -361,6 +361,27 @@ describe("merchant dashboard auth (Spec §9)", () => {
     expect((await app.request("/v1/auth/me", { headers: { authorization: "Bearer not.a.token" } })).status).toBe(401);
   });
 
+  it("rotates the API key — new key works, old key is dead, current token survives", async () => {
+    const { app, merchantKey } = makeApp();
+    const auth = await login(app, merchantKey);
+
+    const rot = await post(app, "/v1/auth/rotate-key", undefined, auth);
+    expect(rot.status).toBe(200);
+    const newKey = (await rot.json()).key;
+    expect(newKey).toMatch(/^bk_merchant_demo_/);
+    expect(newKey).not.toBe(merchantKey);
+
+    // Old key no longer logs in; the new one does.
+    expect((await post(app, "/v1/auth/login", { key: merchantKey })).status).toBe(401);
+    expect((await post(app, "/v1/auth/login", { key: newKey })).status).toBe(200);
+
+    // The session token issued before rotation still works (it's not the key).
+    expect((await app.request("/v1/auth/me", { headers: auth })).status).toBe(200);
+
+    // Rotation requires auth.
+    expect((await post(app, "/v1/auth/rotate-key")).status).toBe(401);
+  });
+
   it("scopes data to the token's merchant — no cross-merchant reads", async () => {
     // Two merchants, each with their own plan, sharing one app/store.
     const planA = { ...demoPlan(), id: "plan_a", planKey: "a", merchantId: "m_a" };
