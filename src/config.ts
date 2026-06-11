@@ -99,6 +99,16 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
     ? new PostgresStore(env.DATABASE_URL!)
     : new MemoryStore([plan], [demoM]);
 
+  // Postgres seeds the demo merchant via SQL (no key); keep it loginable by
+  // setting its key hash at boot to match BOUNCR_DEMO_MERCHANT_KEY. Best-effort
+  // and idempotent — skipped if the seed hasn't been applied yet.
+  if (usePostgres) {
+    store
+      .getMerchant(demoM.id)
+      .then((m) => (m ? store.updateMerchant(demoM.id, { apiKeyHash: demoM.apiKeyHash }) : null))
+      .catch((e) => console.warn(`[auth] demo merchant key provisioning skipped: ${e.message}`));
+  }
+
   // Lint the seed config at boot (Spec §12) — warn loudly on misconfig.
   const lint = lintConfig(plan.config, plan.policy);
   for (const e of lint.errors) console.warn(`[lint:error] ${plan.id}: ${e}`);
