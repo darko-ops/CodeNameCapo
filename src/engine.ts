@@ -143,8 +143,18 @@ export function decide(
   // I3: expiry is evaluated here, never trusted from the client.
   if (now - s.openedAt > c.maxDurationH * 3_600_000) return { type: "walk" };
 
-  // No number on the table => repeat the standing ask in character.
-  if (offer === null) return { type: "hold", amount: s.currentAsk };
+  // No number on the table. A genuinely justified reason (opts.concede === true,
+  // set explicitly by the conversation layer) still earns a move toward target —
+  // word of mouth shouldn't be ignored just because they didn't name a price.
+  // Otherwise (a question / stall) we just repeat the standing ask.
+  if (offer === null) {
+    if (opts.concede === true) {
+      const step = Math.max(c.minConcession, round2((s.currentAsk - c.targetPrice) * 0.3));
+      const amount = round2(Math.max(c.floorPrice, s.currentAsk - step));
+      if (amount < s.currentAsk - 0.01) return { type: "counter", amount, isFinal: false };
+    }
+    return { type: "hold", amount: s.currentAsk };
+  }
 
   const u = Math.max(offer, 0); // a negative "offer" is meaningless; treat as 0.
 

@@ -103,6 +103,18 @@ describe("scripted negotiation (sanity)", () => {
     if (a.type === "counter") expect(a.amount).toBeLessThan(s.currentAsk);
   });
 
+  it("a justified reason with NO number still moves the price toward target", () => {
+    const s = openSession(CFG, 0); // ask = anchor 48, target 22
+    const a = decide(s, null, CFG, 0, { concede: true }); // e.g. 'i'll refer my friends'
+    expect(a.type).toBe("counter");
+    if (a.type === "counter") {
+      expect(a.amount).toBeLessThan(s.currentAsk);
+      expect(a.amount).toBeGreaterThanOrEqual(CFG.targetPrice - CFG.minConcession);
+    }
+    // a numberless turn WITHOUT justification still just holds (default behavior)
+    expect(decide(s, null, CFG, 0).type).toBe("hold");
+  });
+
   it("walks once the deal has expired", () => {
     const s = openSession(CFG, 0);
     const past = CFG.maxDurationH * 3_600_000 + 1;
