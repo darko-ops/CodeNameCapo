@@ -77,6 +77,16 @@ export interface Plan {
   applicationFeePercent?: number | null;
 }
 
+/** The mutable subset of a Plan, replaced wholesale on edit (Spec §8 versioning). */
+export interface PlanUpdate {
+  config: Config;
+  persona: Persona;
+  currency: string;
+  applicationFeePercent: number | null;
+  active: boolean;
+  version: number;
+}
+
 export interface SessionRecord {
   id: string;
   planId: string;
@@ -176,6 +186,8 @@ export interface Store {
 
   getPlan(planId: string): Promise<Plan | null>;
   createPlan(plan: Plan): Promise<Plan>;
+  /** Replace a plan's mutable fields (config, persona, fee, currency, active, version). */
+  updatePlan(id: string, fields: PlanUpdate): Promise<Plan>;
   /** All active plans owned by a merchant (dashboard / onboarding). */
   listPlansByMerchant(merchantId: string): Promise<Plan[]>;
 

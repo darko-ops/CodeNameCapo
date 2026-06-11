@@ -8,6 +8,7 @@ import type {
   Store,
   Merchant,
   Plan,
+  PlanUpdate,
   SessionRecord,
   TurnRecord,
   DealRecord,
@@ -72,6 +73,20 @@ export class MemoryStore implements Store {
     if (this.plans.has(plan.id)) throw new Error(`plan ${plan.id} already exists`);
     this.plans.set(plan.id, clone(plan));
     return clone(plan);
+  }
+
+  async updatePlan(id: string, fields: PlanUpdate): Promise<Plan> {
+    const p = this.plans.get(id);
+    if (!p) throw new Error(`plan ${id} not found`);
+    Object.assign(p, {
+      config: clone(fields.config),
+      persona: clone(fields.persona),
+      currency: fields.currency,
+      applicationFeePercent: fields.applicationFeePercent,
+      active: fields.active,
+      version: fields.version,
+    });
+    return clone(p);
   }
 
   async listPlansByMerchant(merchantId: string): Promise<Plan[]> {

@@ -15,6 +15,11 @@
   .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 22px; }
   input, select { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; background: #14141c; color: var(--text); cursor: pointer; }
   select { max-width: 240px; }
+  .erow { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .erow > div { flex: 1; min-width: 130px; }
+  #edit-form label { display: block; font-size: 11px; color: var(--muted); margin: 8px 0 4px; }
+  #edit-form input, #edit-form select { width: 100%; max-width: none; cursor: text; }
+  #edit-form select { cursor: pointer; }
   input::placeholder { color: #5a5a6a; }
   button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
   button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
@@ -76,6 +81,30 @@
     <div class="lint" id="lint" style="margin-top:10px"></div>
   </div>
 
+  <details class="panel" id="edit-panel">
+    <summary style="cursor:pointer; font-weight:600; font-size:15px">Edit this plan</summary>
+    <form id="edit-form" style="margin-top:14px">
+      <div class="erow">
+        <div><label>Product name</label><input id="e-product" /></div>
+        <div><label>Bouncer name</label><input id="e-persona" /></div>
+        <div><label>Personality</label>
+          <select id="e-style"><option value="sassy">Sassy</option><option value="playful">Playful</option><option value="deadpan">Deadpan</option><option value="professional">Professional</option></select>
+        </div>
+      </div>
+      <div class="erow">
+        <div><label>List $/mo</label><input id="e-list" type="number" min="1" step="0.01" /></div>
+        <div><label>Floor (cost) $/mo</label><input id="e-floor" type="number" min="1" step="0.01" /></div>
+        <div><label>Target $/mo</label><input id="e-target" type="number" min="1" step="0.01" /></div>
+        <div><label>Take-rate % <span style="opacity:.6">(blank = default)</span></label><input id="e-fee" type="number" min="0" max="100" step="0.1" /></div>
+      </div>
+      <div class="lint err" id="edit-err" style="margin-top:8px"></div>
+      <div style="display:flex; gap:10px; align-items:center">
+        <button type="submit" id="edit-save">Save changes</button>
+        <span class="meta" id="edit-status"></span>
+      </div>
+    </form>
+  </details>
+
   <div class="grid" id="funnel"></div>
 
   <div class="panel">
@@ -108,6 +137,7 @@
   const TKEY = "bouncr_dash_token";
   let token = localStorage.getItem(TKEY) || null;
   let MERCHANT = null; // id of the signed-in merchant (from the token)
+  let PLANS = [];      // the merchant's plans (for the dropdown + edit form)
   ["base","plan"].forEach((id) => { const v = localStorage.getItem("bouncr_dash_" + id); if (v) $(id).value = v; });
   function persist() { ["base","plan"].forEach((id) => localStorage.setItem("bouncr_dash_" + id, $(id).value)); }
 
@@ -157,9 +187,10 @@
     try {
       const r = await (await api("/v1/plans")).json();
       const plans = r.plans || [];
+      PLANS = plans;
       sel.innerHTML = "";
-      if (!plans.length) { $("no-plans").style.display = "inline"; sel.style.display = "none"; return false; }
-      $("no-plans").style.display = "none"; sel.style.display = "";
+      if (!plans.length) { $("no-plans").style.display = "inline"; sel.style.display = "none"; $("edit-panel").style.display = "none"; return false; }
+      $("no-plans").style.display = "none"; sel.style.display = ""; $("edit-panel").style.display = "";
       for (const p of plans) {
         const o = document.createElement("option");
         o.value = p.id;
@@ -169,16 +200,59 @@
       }
       const last = localStorage.getItem("bouncr_dash_plan");
       if (last && plans.some((p) => p.id === last)) sel.value = last;
+      fillEdit(sel.value);
       return true;
     } catch (_) { return false; }
   }
+
+  // Populate the edit form from the currently-selected plan.
+  function fillEdit(id) {
+    const p = PLANS.find((x) => x.id === id);
+    if (!p) return;
+    $("e-product").value = (p.persona && p.persona.product_name) || "";
+    $("e-persona").value = (p.persona && p.persona.name) || "";
+    $("e-style").value = (p.persona && p.persona.style) || "sassy";
+    $("e-list").value = p.list_price;
+    $("e-floor").value = p.floor_price;
+    $("e-target").value = p.target_price;
+    $("e-fee").value = p.application_fee_percent == null ? "" : p.application_fee_percent;
+    $("edit-err").textContent = ""; $("edit-status").textContent = "";
+  }
+
+  $("edit-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("edit-err").textContent = ""; $("edit-status").textContent = "saving…";
+    const numv = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : null; };
+    const feeRaw = $("e-fee").value.trim();
+    const body = {
+      product_name: $("e-product").value.trim(),
+      persona_name: $("e-persona").value.trim(),
+      persona_style: $("e-style").value,
+      list_price: numv("e-list"),
+      floor_price: numv("e-floor"),
+      target_price: numv("e-target"),
+      application_fee_percent: feeRaw === "" ? null : parseFloat(feeRaw),
+    };
+    try {
+      const r = guard(await fetch(base() + "/v1/plans/" + encodeURIComponent($("plan").value), {
+        method: "PATCH", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(body),
+      }));
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "could not save");
+      $("edit-status").textContent = "saved ✓";
+      const keep = d.plan.id;
+      await loadPlans();
+      $("plan").value = keep; fillEdit(keep);
+      load(); // re-render with the new prices / reference lines
+    } catch (err) { $("edit-status").textContent = ""; $("edit-err").textContent = err.message; }
+  });
   // After auth: load the merchant's plans, then render the selected one.
   async function enter() {
     const has = await loadPlans();
     if (has) load();
     else { $("funnel").innerHTML = ""; $("closing").innerHTML = ""; $("sessions").innerHTML = ""; $("status").textContent = ""; }
   }
-  $("plan").onchange = load;
+  $("plan").onchange = () => { fillEdit($("plan").value); load(); };
 
   function card(label, value) { return `<div class="card"><h3>${label}</h3><div class="big">${value}</div></div>`; }
 

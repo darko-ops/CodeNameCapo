@@ -287,6 +287,38 @@ describe("merchant signup / onboarding (Spec §9)", () => {
     expect(sess.status).toBe(201);
   });
 
+  it("edits a plan in place — re-lints, bumps version, and stays scoped", async () => {
+    const { app } = makeApp();
+    const s = await (await post(app, "/v1/signup", { name: "EditCo" })).json();
+    const auth = { authorization: "Bearer " + s.token };
+    const created = await (await post(app, "/v1/plans", { product_name: "Edit Pro", list_price: 30, floor_price: 20 }, auth)).json();
+    const id = created.plan.id;
+    const patch = (body: unknown, headers: Record<string, string> = auth) => app.request(`/v1/plans/${id}`, { method: "PATCH", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+
+    // Valid edit: new prices + persona + a per-plan fee override.
+    const ok = await patch({ list_price: 45, floor_price: 28, target_price: 40, persona_name: "Tony", application_fee_percent: 12 });
+    expect(ok.status).toBe(200);
+    const updated = (await ok.json()).plan;
+    expect(updated.list_price).toBe(45);
+    expect(updated.floor_price).toBe(28);
+    expect(updated.persona.name).toBe("Tony");
+    expect(updated.application_fee_percent).toBe(12);
+    expect(updated.version).toBe(2); // bumped from 1
+
+    // Clearing the fee (null) reverts to the platform default.
+    expect((await (await patch({ application_fee_percent: null })).json()).plan.application_fee_percent).toBeNull();
+
+    // A breaking edit (floor ≥ target) is rejected with the reason.
+    const bad = await patch({ floor_price: 100 });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toMatch(/invalid|target|floor/i);
+
+    // Auth required; another merchant can't edit it (404, not 403).
+    expect((await patch({ list_price: 10 }, {})).status).toBe(401);
+    const other = await (await post(app, "/v1/signup", { name: "OtherCo" })).json();
+    expect((await patch({ list_price: 10 }, { authorization: "Bearer " + other.token })).status).toBe(404);
+  });
+
   it("rejects signup with no name and a plan that breaks the floor/target invariant", async () => {
     const { app } = makeApp();
     expect((await post(app, "/v1/signup", { name: "" })).status).toBe(400);

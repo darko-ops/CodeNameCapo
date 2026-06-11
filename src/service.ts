@@ -279,6 +279,65 @@ export class BouncrService {
     });
   }
 
+  /**
+   * Edit an existing plan (scoped to its owner). Applies a partial change over
+   * the current config/persona, re-lints (a breaking edit is rejected with the
+   * reasons), and bumps the version so new deals close under the new terms.
+   */
+  async updatePlan(
+    merchantId: string,
+    planId: string,
+    input: {
+      productName?: string;
+      listPrice?: number;
+      floorPrice?: number;
+      targetPrice?: number;
+      currency?: string;
+      personaName?: string;
+      personaStyle?: Persona["style"];
+      applicationFeePercent?: number | null;
+      active?: boolean;
+    },
+  ): Promise<Plan> {
+    const plan = await this.requireOwnedPlan(planId, merchantId);
+
+    const config: Config = { ...plan.config };
+    for (const [k, v] of [
+      ["listPrice", input.listPrice],
+      ["floorPrice", input.floorPrice],
+      ["targetPrice", input.targetPrice],
+    ] as const) {
+      if (v !== undefined) {
+        const n = num(v);
+        if (n === null) throw new ServiceError("bad_request", `${k} must be a number`);
+        config[k] = n;
+      }
+    }
+    const lint = lintConfig(config, plan.policy);
+    if (!lint.ok) throw new ServiceError("bad_request", `plan config invalid: ${lint.errors.join("; ")}`);
+
+    const persona: Persona = { ...plan.persona };
+    if (input.productName?.trim()) persona.productName = input.productName.trim();
+    if (input.personaName?.trim()) persona.name = input.personaName.trim();
+    if (input.personaStyle) persona.style = input.personaStyle;
+
+    const fee =
+      input.applicationFeePercent === undefined
+        ? (plan.applicationFeePercent ?? null)
+        : input.applicationFeePercent === null
+          ? null
+          : Math.max(0, Math.min(100, input.applicationFeePercent));
+
+    return this.store.updatePlan(planId, {
+      config,
+      persona,
+      currency: (input.currency ?? plan.currency).toLowerCase(),
+      applicationFeePercent: fee,
+      active: input.active ?? plan.active,
+      version: plan.version + 1,
+    });
+  }
+
   // --- Merchant auth (dashboard) -------------------------------------------
 
   /**

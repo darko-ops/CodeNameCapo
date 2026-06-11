@@ -139,6 +139,24 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     return c.json({ plans: plans.map(planJson) });
   });
 
+  app.patch("/v1/plans/:id", dashboardAuth, async (c) => {
+    const b = await safeJson(c);
+    const plan = await service.updatePlan(c.get("merchantId"), c.req.param("id")!, {
+      ...(str(b.product_name) ? { productName: str(b.product_name)! } : {}),
+      ...(num(b.list_price) !== null ? { listPrice: num(b.list_price)! } : {}),
+      ...(num(b.floor_price) !== null ? { floorPrice: num(b.floor_price)! } : {}),
+      ...(num(b.target_price) !== null ? { targetPrice: num(b.target_price)! } : {}),
+      ...(str(b.persona_name) ? { personaName: str(b.persona_name)! } : {}),
+      ...(personaStyle(b.persona_style) ? { personaStyle: personaStyle(b.persona_style)! } : {}),
+      // application_fee_percent: number sets an override, null clears it (use platform default)
+      ...("application_fee_percent" in b
+        ? { applicationFeePercent: num(b.application_fee_percent) }
+        : {}),
+      ...(typeof b.active === "boolean" ? { active: b.active } : {}),
+    });
+    return c.json({ plan: planJson(plan), embed: embedInfo(baseFromReq(c), plan.id) });
+  });
+
   // --- merchant routes (API key) -------------------------------------------
 
   const merchantKey = apiKeyGuard(deps.apiKey);
@@ -437,6 +455,8 @@ function planJson(p: import("./store/types.js").Plan) {
     floor_price: p.config.floorPrice,
     target_price: p.config.targetPrice,
     persona: { name: p.persona.name, product_name: p.persona.productName, style: p.persona.style },
+    application_fee_percent: p.applicationFeePercent ?? null,
+    version: p.version,
     active: p.active,
   };
 }

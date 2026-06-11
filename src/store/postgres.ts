@@ -15,6 +15,7 @@ import type {
   Store,
   Merchant,
   Plan,
+  PlanUpdate,
   NegotiationPolicy,
   UsagePolicy,
   SessionRecord,
@@ -101,6 +102,20 @@ export class PostgresStore implements Store {
          ${this.sql.json(p.policy as any)}, ${this.sql.json(p.usage as any)},
          ${p.version}, ${p.active}, ${p.applicationFeePercent ?? null})
       returning *`;
+    return mapPlan(rows[0]);
+  }
+
+  async updatePlan(id: string, f: PlanUpdate): Promise<Plan> {
+    const rows = await this.sql`
+      update bouncr.plans set
+        config_jsonb            = ${this.sql.json(f.config as any)},
+        persona_jsonb           = ${this.sql.json(f.persona as any)},
+        currency                = ${f.currency},
+        application_fee_percent = ${f.applicationFeePercent},
+        active                  = ${f.active},
+        version                 = ${f.version}
+      where id = ${id} returning *`;
+    if (!rows[0]) throw new Error(`plan ${id} not found`);
     return mapPlan(rows[0]);
   }
 
