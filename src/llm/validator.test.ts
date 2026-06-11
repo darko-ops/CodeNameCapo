@@ -4,7 +4,7 @@ import { template } from "./renderer.js";
 import type { Action } from "../engine.js";
 import type { Persona } from "./types.js";
 
-const PERSONA: Persona = { name: "Vinny", productName: "Obius", style: "sassy", roastLevel: 2 };
+const PERSONA: Persona = { name: "Vini", productName: "Obius", style: "sassy", roastLevel: 2 };
 
 describe("permittedAmount", () => {
   it("returns the amount for accept/counter/hold and null for walk", () => {

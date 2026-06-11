@@ -257,7 +257,7 @@ export class BouncrService {
       currency: (input.currency ?? "usd").toLowerCase(),
       config,
       persona: {
-        name: input.personaName?.trim() || "Vinny",
+        name: input.personaName?.trim() || "Vini",
         productName,
         style: input.personaStyle ?? "sassy",
         roastLevel: 2,

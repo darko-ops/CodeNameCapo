@@ -54,7 +54,7 @@ export type Extraction = z.infer<typeof ExtractionSchema>;
 
 /** Persona configuration (Spec §4.1 persona block). */
 export interface Persona {
-  /** The bouncer's name, e.g. "Vinny". */
+  /** The bouncer's name, e.g. "Vini". */
   name: string;
   /** The merchant's product name, e.g. "Obius". */
   productName: string;

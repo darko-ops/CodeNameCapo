@@ -30,7 +30,7 @@ const CFG: Config = {
 };
 
 const PERSONA: Persona = {
-  name: "Vinny",
+  name: "Vini",
   productName: "Obius",
   style: "sassy",
   roastLevel: 2,

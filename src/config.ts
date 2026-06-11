@@ -47,7 +47,7 @@ export function demoPlan(): Plan {
       minConcession: 1.0,
       lambda: 0.55,
     },
-    persona: { name: "Vinny", productName: "Obius", style: "sassy", roastLevel: 2 },
+    persona: { name: "Vini", productName: "Obius", style: "sassy", roastLevel: 2 },
     policy: { cooldownHours: 72, maxMessages: 30 },
     usage: {
       bandCeiling: 1000, // usage units / cycle; breach above this

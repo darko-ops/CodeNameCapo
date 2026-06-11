@@ -3,7 +3,7 @@ import { stripFormatting, template } from "./renderer.js";
 import { validate } from "./validator.js";
 import type { Action } from "../engine.js";
 
-const PERSONA = { name: "Vinny", productName: "Obius", style: "deadpan", roastLevel: 2 } as any;
+const PERSONA = { name: "Vini", productName: "Obius", style: "deadpan", roastLevel: 2 } as any;
 
 describe("stripFormatting — plain-text texting style", () => {
   it("removes bold/italics but keeps the dollar amount intact", () => {
