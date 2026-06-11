@@ -23,6 +23,7 @@ import type { StripeGateway } from "./stripe/gateway.js";
 import { BouncrService, ServiceError } from "./service.js";
 import { RateLimiter, type RateRule } from "./ratelimit.js";
 import { signSession, verifySession } from "./auth.js";
+import { dispatchMcp } from "./mcp.js";
 import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML } from "./widget/assets.js";
 
 export interface AppDeps {
@@ -366,6 +367,28 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     console.log(`[waitlist] ${email.trim().toLowerCase()} (${str(body.source) ?? "landing"})`);
     return c.json({ ok: true });
   });
+
+  // --- MCP server (Streamable HTTP) ----------------------------------------
+  // Any AI agent can negotiate via tools — same engine + validator as the widget,
+  // so the floor holds. Keyless (plan id only), rate-limited like the widget.
+  app.post("/mcp", async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 3_000, max: 12 }, { windowMs: 60_000, max: 40 }])) {
+      return c.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "rate limited" } }, 429);
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }, 400);
+    }
+    if (Array.isArray(body)) {
+      return c.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "JSON-RPC batching is not supported" } }, 400);
+    }
+    const res = await dispatchMcp(service, (body ?? {}) as Record<string, unknown>);
+    return res === null ? c.body(null, 202) : c.json(res);
+  });
+  // We don't open server-initiated streams; per the MCP spec a 405 is valid.
+  app.get("/mcp", (c) => c.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "GET not supported — POST JSON-RPC" } }, 405));
 
   // --- settlement -----------------------------------------------------------
 
