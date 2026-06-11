@@ -13,14 +13,19 @@ create schema if not exists bouncr;
 create table if not exists bouncr.merchants (
   id                 text primary key,
   name               text not null,
-  email              text,          -- contact email from signup
+  email              text,          -- login identifier (unique, case-insensitive)
+  password_hash      text,          -- scrypt$salt$hash of the dashboard password
   stripe_connect_id  text,
-  api_key_hash       text,          -- SHA-256 of the dashboard API key
+  api_key_hash       text,          -- SHA-256 of the programmatic API key (agents / MCP)
   created_at         bigint not null
 );
 -- Idempotent adds for existing deployments (these columns are new).
 alter table bouncr.merchants add column if not exists api_key_hash text;
 alter table bouncr.merchants add column if not exists email text;
+alter table bouncr.merchants add column if not exists password_hash text;
+-- Email is the login key — enforce case-insensitive uniqueness.
+create unique index if not exists merchants_email_unique
+  on bouncr.merchants (lower(email)) where email is not null;
 
 create table if not exists bouncr.plans (
   id            text primary key,

@@ -13,7 +13,14 @@ import { randomUUID } from "node:crypto";
 import { openSession, round2, type Action, type Config, type SessionState } from "./engine.js";
 import type { Store, Plan, Merchant, SessionRecord, TurnRecord, DealRecord } from "./store/types.js";
 import type { Persona } from "./llm/types.js";
-import { parseMerchantKey, hashKey, safeEqualHex, generateMerchantKey } from "./auth.js";
+import {
+  parseMerchantKey,
+  hashKey,
+  safeEqualHex,
+  generateMerchantKey,
+  hashPassword,
+  verifyPassword,
+} from "./auth.js";
 
 /** Coerce to a finite number, or null. */
 const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
@@ -188,19 +195,29 @@ export class BouncrService {
   // --- Merchant signup / onboarding (Spec §9) ------------------------------
 
   /**
-   * Create a new merchant and mint its dashboard API key. Returns the merchant
-   * and the plaintext key (shown to the user ONCE — only the hash is stored).
+   * Create a new merchant. The merchant logs into the dashboard with their
+   * email + password; an API key is also minted for programmatic / agent (MCP)
+   * access and returned ONCE (only its hash is stored). Email is the unique
+   * login identifier.
    */
   async signupMerchant(input: {
     name: string;
-    email?: string | null;
+    email: string;
+    password: string;
     plan?: PlanInput;
   }): Promise<{ merchant: Merchant; key: string; plan?: Plan }> {
     const name = input.name?.trim();
     if (!name) throw new ServiceError("bad_request", "a business name is required");
-    const email = input.email?.trim() || null;
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      throw new ServiceError("bad_request", "email is not valid");
+    const email = input.email?.trim().toLowerCase() || "";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new ServiceError("bad_request", "a valid email is required");
+    }
+    const password = input.password ?? "";
+    if (password.length < 8) {
+      throw new ServiceError("bad_request", "password must be at least 8 characters");
+    }
+    if (await this.store.getMerchantByEmail(email)) {
+      throw new ServiceError("conflict", "an account with that email already exists");
     }
     const id = `merchant_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
     const key = generateMerchantKey(id);
@@ -212,13 +229,27 @@ export class BouncrService {
       id,
       name,
       email,
+      passwordHash: hashPassword(password),
       stripeConnectId: null,
       apiKeyHash: hashKey(key),
       createdAt: this.now(),
     });
-    await this.store.appendEvent("merchant.signup", { merchantId: id, name, hasEmail: Boolean(email) });
+    await this.store.appendEvent("merchant.signup", { merchantId: id, name });
     const plan = planToCreate ? await this.store.createPlan(planToCreate) : undefined;
     return { merchant, key, ...(plan ? { plan } : {}) };
+  }
+
+  /**
+   * Validate an email + password for dashboard login. Returns the merchant on
+   * success; throws unauthorized otherwise. The same opaque error for "no such
+   * email" and "wrong password" avoids leaking which emails are registered.
+   */
+  async authenticatePassword(email: string, password: string): Promise<Merchant> {
+    const merchant = email ? await this.store.getMerchantByEmail(email.trim().toLowerCase()) : null;
+    if (!merchant || !verifyPassword(password ?? "", merchant.passwordHash)) {
+      throw new ServiceError("unauthorized", "invalid email or password");
+    }
+    return merchant;
   }
 
   /** A merchant's own plans (onboarding / dashboard). */
@@ -375,10 +406,10 @@ export class BouncrService {
     return merchant;
   }
 
-  /** Public merchant info for a logged-in dashboard (id + name). */
-  async getMerchantInfo(merchantId: string): Promise<{ id: string; name: string } | null> {
+  /** Public merchant info for a logged-in dashboard (id + name + email). */
+  async getMerchantInfo(merchantId: string): Promise<{ id: string; name: string; email: string | null } | null> {
     const m = await this.store.getMerchant(merchantId);
-    return m ? { id: m.id, name: m.name } : null;
+    return m ? { id: m.id, name: m.name, email: m.email } : null;
   }
 
   /** Mint (or rotate) a merchant's API key; stores only the hash, returns the

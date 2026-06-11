@@ -10,7 +10,31 @@
  *   2. Session token — an HMAC-signed `base64url(payload).sig` the dashboard
  *      carries as a bearer. Short-lived; no server-side storage.
  */
-import { createHmac, createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+
+// --- passwords (human-chosen → slow, salted hash) --------------------------
+
+/** Hash a password with scrypt + a random salt. Stored as `scrypt$salt$hash`. */
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 32).toString("hex");
+  return `scrypt$${salt}$${hash}`;
+}
+
+/** Verify a password against a stored `scrypt$salt$hash` (constant-time). */
+export function verifyPassword(password: string, stored: string | null | undefined): boolean {
+  if (!stored) return false;
+  const [scheme, salt, hash] = stored.split("$");
+  if (scheme !== "scrypt" || !salt || !hash) return false;
+  const want = Buffer.from(hash, "hex");
+  let got: Buffer;
+  try {
+    got = scryptSync(password, salt, want.length);
+  } catch {
+    return false;
+  }
+  return got.length === want.length && timingSafeEqual(got, want);
+}
 
 const KEY_RE = /^bk_(.+)_[0-9a-f]{48}$/;
 

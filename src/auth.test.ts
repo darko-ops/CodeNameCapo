@@ -6,6 +6,8 @@ import {
   safeEqualHex,
   signSession,
   verifySession,
+  hashPassword,
+  verifyPassword,
 } from "./auth.js";
 
 describe("merchant keys", () => {
@@ -26,6 +28,26 @@ describe("merchant keys", () => {
     expect(hashKey(key)).not.toBe(hashKey(generateMerchantKey("m_x")));
     expect(safeEqualHex(hashKey(key), hashKey(key))).toBe(true);
     expect(safeEqualHex(hashKey(key), hashKey("other"))).toBe(false);
+  });
+});
+
+describe("passwords", () => {
+  it("verifies the right password and rejects the wrong one", () => {
+    const stored = hashPassword("correct horse battery staple");
+    expect(stored).toMatch(/^scrypt\$[0-9a-f]+\$[0-9a-f]+$/);
+    expect(verifyPassword("correct horse battery staple", stored)).toBe(true);
+    expect(verifyPassword("wrong", stored)).toBe(false);
+  });
+
+  it("salts — the same password hashes differently each time", () => {
+    expect(hashPassword("hunter2")).not.toBe(hashPassword("hunter2"));
+  });
+
+  it("treats null / malformed stored hashes as a non-match (no throw)", () => {
+    expect(verifyPassword("x", null)).toBe(false);
+    expect(verifyPassword("x", undefined)).toBe(false);
+    expect(verifyPassword("x", "not-a-hash")).toBe(false);
+    expect(verifyPassword("x", "bcrypt$salt$hash")).toBe(false);
   });
 });
 

@@ -71,13 +71,15 @@
       <form id="account-form" autocomplete="on">
         <label for="name">Business / product name</label>
         <input id="name" placeholder="Obius" required />
-        <label for="email">Email <span style="opacity:.6">(optional)</span></label>
-        <input id="email" type="email" placeholder="you@company.com" autocomplete="email" />
+        <label for="email">Email <span style="opacity:.6">(you'll log in with this)</span></label>
+        <input id="email" type="email" placeholder="you@company.com" autocomplete="email" required />
+        <label for="password">Password <span style="opacity:.6">(at least 8 characters)</span></label>
+        <input id="password" type="password" placeholder="choose a password" autocomplete="new-password" minlength="8" required />
         <div class="err" id="account-err"></div>
         <button type="submit">Next →</button>
       </form>
     </div>
-    <p class="foot">Already have a key? <a href="/dashboard">Go to the dashboard</a>.</p>
+    <p class="foot">Already have an account? <a href="/dashboard">Go to the dashboard</a>.</p>
   </section>
 
   <!-- Step 2: first plan; the final "Create account" submits everything at once -->
@@ -127,11 +129,12 @@
 
   <!-- Step 3: done — account + plan now exist; show the key + embed -->
   <section id="sec-3" class="hidden">
-    <h1>You're in. Save your API key.</h1>
-    <p class="sub">This is your dashboard login. We only store a hash, so you won't see it again.</p>
+    <h1>You're in.</h1>
+    <p class="sub">Log into your dashboard anytime with your email and password. Below is your API key for connecting AI agents (MCP) and server calls. We only store a hash, so you won't see it again, but you can rotate it from Settings anytime.</p>
     <div class="card">
+      <p class="hint" style="margin:0 0 6px">Your agent API key:</p>
       <div class="keybox" id="key-box"><div class="keyval" id="key-val"></div><button class="copy ghost" data-copy="key-box">Copy</button></div>
-      <div class="warn">⚠ Store this somewhere safe (a password manager). It's shown once.</div>
+      <div class="warn">⚠ Store this somewhere safe (a password manager). It's shown once, but you can rotate it later in Settings.</div>
       <p class="hint" style="margin-top:20px">Drop your bouncer on your pricing page:</p>
       <div class="snip" id="snip-box"><div class="keyval" id="snip-val"></div><button class="copy ghost" data-copy="snip-box">Copy</button></div>
       <p class="hint" style="margin-top:8px">Add a target element too: <code>&lt;div id="bouncr"&gt;&lt;/div&gt;</code></p>
@@ -193,6 +196,9 @@
     e.preventDefault();
     $("account-err").textContent = "";
     if (!$("name").value.trim()) { $("account-err").textContent = "a business name is required"; return; }
+    const email = $("email").value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { $("account-err").textContent = "a valid email is required"; return; }
+    if ($("password").value.length < 8) { $("account-err").textContent = "password must be at least 8 characters"; return; }
     mark(2); show("sec-2");
   });
 
@@ -214,7 +220,7 @@
       if (target !== null) plan.target_price = target;
       const r = await fetch(base + "/v1/signup", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: $("name").value.trim(), email: $("email").value.trim() || null, plan }),
+        body: JSON.stringify({ name: $("name").value.trim(), email: $("email").value.trim(), password: $("password").value, plan }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "could not create your account");

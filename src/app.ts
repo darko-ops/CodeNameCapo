@@ -75,20 +75,23 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
   app.get("/healthz", (c) => c.json({ ok: true }));
 
   // --- merchant dashboard auth (Spec §9) -----------------------------------
-  // Each merchant has an API key; login exchanges it for a short-lived signed
-  // token (stateless HMAC — no session store, works across serverless instances).
-  // Dashboard reads are gated by this token AND scoped to the token's merchant.
+  // Merchants log in with email + password; login exchanges them for a
+  // short-lived signed token (stateless HMAC — no session store, works across
+  // serverless instances). Dashboard reads are gated by this token AND scoped to
+  // the token's merchant.
   app.post("/v1/auth/login", async (c) => {
     if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 10 }])) {
       return c.json({ error: "too many attempts, try again shortly", code: "unauthorized" }, 429);
     }
-    const key = str((await safeJson(c)).key);
+    const body = await safeJson(c);
+    const email = str(body.email);
+    const password = str(body.password);
     try {
-      const merchant = await service.authenticateMerchantKey(key ?? undefined);
+      const merchant = await service.authenticatePassword(email ?? "", password ?? "");
       const { token, expiresAt } = signSession(merchant.id, deps.authSecret, DASHBOARD_TTL_MS, Date.now());
       return c.json({ token, expires_at: expiresAt, merchant: { id: merchant.id, name: merchant.name } });
     } catch {
-      return c.json({ error: "invalid credentials", code: "unauthorized" }, 401);
+      return c.json({ error: "invalid email or password", code: "unauthorized" }, 401);
     }
   });
 
@@ -139,7 +142,8 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
       : undefined;
     const { merchant, key, plan } = await service.signupMerchant({
       name: str(body.name) ?? "",
-      email: str(body.email),
+      email: str(body.email) ?? "",
+      password: str(body.password) ?? "",
       ...(planInput ? { plan: planInput } : {}),
     });
     const { token, expiresAt } = signSession(merchant.id, deps.authSecret, DASHBOARD_TTL_MS, Date.now());

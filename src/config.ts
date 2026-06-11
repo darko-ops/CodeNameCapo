@@ -7,7 +7,7 @@
  */
 import { randomBytes } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
-import { generateMerchantKey, hashKey } from "./auth.js";
+import { generateMerchantKey, hashKey, hashPassword } from "./auth.js";
 import type { Plan, Merchant, Store } from "./store/types.js";
 import { MemoryStore } from "./store/memory.js";
 import { PostgresStore } from "./store/postgres.js";
@@ -21,7 +21,15 @@ import { BouncrService } from "./service.js";
 
 /** The demo merchant Bouncr ships with (Connect not yet onboarded). */
 export function demoMerchant(): Merchant {
-  return { id: "merchant_demo", name: "Obius", email: null, stripeConnectId: null, apiKeyHash: null, createdAt: 0 };
+  return {
+    id: "merchant_demo",
+    name: "Obius",
+    email: "demo@thebouncr.com",
+    passwordHash: null,
+    stripeConnectId: null,
+    apiKeyHash: null,
+    createdAt: 0,
+  };
 }
 
 /** The demo plan Bouncr ships with — the CLI/dogfood "pro_monthly" tier. */
@@ -84,13 +92,19 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
     console.warn("[auth] BOUNCR_AUTH_SECRET unset — dashboard sessions won't survive a restart");
   }
 
-  // Seed the in-memory demo merchant with a dashboard key so the demo dashboard
-  // is loginable. A stable key comes from BOUNCR_DEMO_MERCHANT_KEY; otherwise we
-  // mint one and log it (dev convenience). Postgres deployments seed keys via SQL.
+  // Seed the in-memory demo merchant so the demo dashboard is loginable:
+  //  - email + password (BOUNCR_DEMO_MERCHANT_PASSWORD, default "bouncrdemo") for
+  //    the dashboard login,
+  //  - an API key (BOUNCR_DEMO_MERCHANT_KEY) for programmatic / MCP access.
+  // Postgres deployments seed these via SQL.
   const demoM = demoMerchant();
   const demoKey = env.BOUNCR_DEMO_MERCHANT_KEY ?? generateMerchantKey(demoM.id);
   demoM.apiKeyHash = hashKey(demoKey);
-  if (!env.BOUNCR_DEMO_MERCHANT_KEY) console.log(`[auth] demo merchant dashboard key: ${demoKey}`);
+  const demoPassword = env.BOUNCR_DEMO_MERCHANT_PASSWORD ?? "bouncrdemo";
+  demoM.passwordHash = hashPassword(demoPassword);
+  if (!env.BOUNCR_DEMO_MERCHANT_KEY) console.log(`[auth] demo merchant api key: ${demoKey}`);
+  if (!env.BOUNCR_DEMO_MERCHANT_PASSWORD)
+    console.log(`[auth] demo login: ${demoM.email} / ${demoPassword}`);
 
   // Postgres when DATABASE_URL is set (apply db/schema.sql + db/seed.sql first),
   // else the in-memory store seeded with the demo merchant/plan.

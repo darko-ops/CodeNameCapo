@@ -63,22 +63,29 @@ export class PostgresStore implements Store {
     return rows[0] ? mapMerchant(rows[0]) : null;
   }
 
+  async getMerchantByEmail(email: string): Promise<Merchant | null> {
+    const rows = await this.sql`
+      select * from bouncr.merchants where lower(email) = ${email.trim().toLowerCase()} limit 1`;
+    return rows[0] ? mapMerchant(rows[0]) : null;
+  }
+
   async createMerchant(m: Merchant): Promise<Merchant> {
     const rows = await this.sql`
-      insert into bouncr.merchants (id, name, email, stripe_connect_id, api_key_hash, created_at)
-      values (${m.id}, ${m.name}, ${m.email}, ${m.stripeConnectId}, ${m.apiKeyHash}, ${m.createdAt})
+      insert into bouncr.merchants (id, name, email, password_hash, stripe_connect_id, api_key_hash, created_at)
+      values (${m.id}, ${m.name}, ${m.email}, ${m.passwordHash}, ${m.stripeConnectId}, ${m.apiKeyHash}, ${m.createdAt})
       returning *`;
     return mapMerchant(rows[0]);
   }
 
   async updateMerchant(
     id: string,
-    patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>,
+    patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash">>,
   ): Promise<Merchant> {
     const rows = await this.sql`
       update bouncr.merchants set
         stripe_connect_id = coalesce(${patch.stripeConnectId ?? null}, stripe_connect_id),
-        api_key_hash      = coalesce(${patch.apiKeyHash ?? null}, api_key_hash)
+        api_key_hash      = coalesce(${patch.apiKeyHash ?? null}, api_key_hash),
+        password_hash     = coalesce(${patch.passwordHash ?? null}, password_hash)
       where id = ${id} returning *`;
     if (!rows[0]) throw new Error(`merchant ${id} not found`);
     return mapMerchant(rows[0]);
@@ -363,6 +370,7 @@ function mapMerchant(r: any): Merchant {
     id: r.id,
     name: r.name,
     email: r.email ?? null,
+    passwordHash: r.password_hash ?? null,
     stripeConnectId: r.stripe_connect_id ?? null,
     apiKeyHash: r.api_key_hash ?? null,
     createdAt: Number(r.created_at),

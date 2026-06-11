@@ -49,13 +49,19 @@ export class MemoryStore implements Store {
     return m ? clone(m) : null;
   }
 
+  async getMerchantByEmail(email: string): Promise<Merchant | null> {
+    const e = email.trim().toLowerCase();
+    const m = [...this.merchants.values()].find((x) => (x.email ?? "").toLowerCase() === e);
+    return m ? clone(m) : null;
+  }
+
   async createMerchant(merchant: Merchant): Promise<Merchant> {
     if (this.merchants.has(merchant.id)) throw new Error(`merchant ${merchant.id} already exists`);
     this.merchants.set(merchant.id, clone(merchant));
     return clone(merchant);
   }
 
-  async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>): Promise<Merchant> {
+  async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash">>): Promise<Merchant> {
     const m = this.merchants.get(id);
     if (!m) throw new Error(`merchant ${id} not found`);
     Object.assign(m, patch);

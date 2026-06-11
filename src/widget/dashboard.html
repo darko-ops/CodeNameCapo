@@ -119,9 +119,10 @@
 <form class="gate" id="login" autocomplete="off">
   <svg class="glogo" viewBox="0 0 100 100" aria-hidden="true"><rect x="8" y="8" width="84" height="84" rx="24" fill="#7C3AED"/><circle cx="50" cy="34" r="10" fill="#0B0B12"/><path d="M27 64 L73 53" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/><path d="M27 53 L73 64" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/></svg>
   <h2>Sign in to your dashboard</h2>
-  <p class="gate-sub">Enter your merchant API key, or create an account to get one.</p>
+  <p class="gate-sub">Welcome back. Log in with your email and password.</p>
+  <input id="email" type="email" autocomplete="username" placeholder="you@company.com" style="width:100%;box-sizing:border-box;margin-bottom:8px" />
   <div class="gate-row">
-    <input id="key" type="password" autocomplete="current-password" placeholder="merchant API key (bk_…)" />
+    <input id="password" type="password" autocomplete="current-password" placeholder="password" />
     <button id="login-btn" type="submit">Log in</button>
   </div>
   <span id="login-status" class="meta"></span>
@@ -205,7 +206,7 @@
       <div class="seclabel">Account</div>
       <div class="card">
         <h3>API key</h3>
-        <p class="meta" style="margin:0 0 12px">Your API key is your dashboard login. Rotate it if it may be exposed; the old key stops working immediately and your current session stays signed in.</p>
+        <p class="meta" style="margin:0 0 12px">For connecting AI agents (MCP) and server-to-server calls. You log into this dashboard with your email and password, not this key. Rotate it if it may be exposed; the old key stops working immediately and your dashboard session stays signed in.</p>
         <button class="ghost" id="rotate-btn">Rotate API key</button>
         <div class="keybox" id="newkey-box" style="display:none; margin-top:14px"><span class="keyval" id="newkey-val"></span><button class="ghost copy" id="copy-newkey" type="button">Copy</button></div>
         <div class="warn" id="rotate-warn" style="display:none">⚠ Save this now, it's shown once and your old key no longer works.</div>
@@ -267,11 +268,12 @@
 
   $("login").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const key = $("key").value.trim();
-    if (!key) return;
+    const email = $("email").value.trim();
+    const password = $("password").value;
+    if (!email || !password) return;
     $("login-status").textContent = "signing in…";
     try {
-      const r = await fetch(base() + "/v1/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
+      const r = await fetch(base() + "/v1/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "login failed");
       token = d.token; localStorage.setItem(TKEY, token);

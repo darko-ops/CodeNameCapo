@@ -5,14 +5,25 @@ import { MemoryStore } from "./store/memory.js";
 import { FakeStripeGateway } from "./stripe/fake.js";
 import { makeTemplateNegotiator } from "./llm/negotiator.js";
 import { demoPlan, demoMerchant } from "./config.js";
-import { generateMerchantKey, hashKey } from "./auth.js";
+import { generateMerchantKey, hashKey, hashPassword } from "./auth.js";
 
 const PLAN = demoPlan();
 const AUTH_SECRET = "test_auth_secret";
+const DEMO_EMAIL = "demo@bouncr.test";
+const DEMO_PASSWORD = "demopassword123";
+
+// Unique creds per signup so emails don't collide within a shared store.
+let _seq = 0;
+function signup(app: any, body: Record<string, unknown> = {}) {
+  return post(app, "/v1/signup", { email: `m${++_seq}@test.co`, password: "password123", ...body });
+}
 
 function makeApp(apiKey: string | null = null) {
-  // Seed the demo merchant with a known dashboard key so login works in tests.
+  // Seed the demo merchant with known email/password (dashboard login) and an
+  // API key (programmatic / MCP) so both paths work in tests.
   const merchant = demoMerchant();
+  merchant.email = DEMO_EMAIL;
+  merchant.passwordHash = hashPassword(DEMO_PASSWORD);
   const merchantKey = generateMerchantKey(merchant.id);
   merchant.apiKeyHash = hashKey(merchantKey);
   const store = new MemoryStore([PLAN], [merchant]);
@@ -23,15 +34,21 @@ function makeApp(apiKey: string | null = null) {
     negotiator: makeTemplateNegotiator(),
     baseUrl: "http://localhost:8787",
   });
-  return { app: buildApp({ service, stripe, apiKey, authSecret: AUTH_SECRET }), store, stripe, merchantKey };
+  return { app: buildApp({ service, stripe, apiKey, authSecret: AUTH_SECRET }), store, stripe, merchantKey, email: DEMO_EMAIL, password: DEMO_PASSWORD };
 }
 
-/** Log in as the demo merchant and return a Bearer auth header. */
-async function login(app: any, key: string): Promise<Record<string, string>> {
-  const r = await post(app, "/v1/auth/login", { key });
+/** Log in with email + password and return a Bearer auth header. */
+async function login(app: any, email: string, password: string): Promise<Record<string, string>> {
+  const r = await post(app, "/v1/auth/login", { email, password });
   const b = await r.json();
   return { authorization: "Bearer " + b.token };
 }
+
+/** Auth a merchant API key via the MCP endpoint — 200 if valid, 401 if not. */
+const mcpAuthStatus = (app: any, key: string) =>
+  post(app, "/mcp", { jsonrpc: "2.0", id: 1, method: "tools/list" }, { authorization: "Bearer " + key }).then(
+    (r: Response) => r.status,
+  );
 
 const post = (app: any, path: string, body?: unknown, headers: Record<string, string> = {}) =>
   app.request(path, {
@@ -251,16 +268,16 @@ describe("merchant signup / onboarding (Spec §9)", () => {
   it("signs up a merchant, returns a usable key + token, and creates a first plan", async () => {
     const { app } = makeApp();
 
-    // 1. Signup → merchant, plaintext key, auto-login token.
-    const su = await post(app, "/v1/signup", { name: "Acme Co", email: "founder@acme.com" });
+    // 1. Signup → merchant, agent API key, auto-login token.
+    const su = await signup(app, { name: "Acme Co", email: "founder@acme.com", password: "password123" });
     expect(su.status).toBe(201);
     const s = await su.json();
     expect(s.merchant.id).toMatch(/^merchant_/);
     expect(s.key).toMatch(/^bk_merchant_/);
     expect(s.token).toBeTruthy();
 
-    // The returned key actually logs in (independent of the auto-login token).
-    expect((await post(app, "/v1/auth/login", { key: s.key })).status).toBe(200);
+    // The email + password log in (independent of the auto-login token).
+    expect((await post(app, "/v1/auth/login", { email: "founder@acme.com", password: "password123" })).status).toBe(200);
 
     const auth = { authorization: "Bearer " + s.token };
     // 2. No plans yet.
@@ -289,7 +306,7 @@ describe("merchant signup / onboarding (Spec §9)", () => {
 
   it("edits a plan in place — re-lints, bumps version, and stays scoped", async () => {
     const { app } = makeApp();
-    const s = await (await post(app, "/v1/signup", { name: "EditCo" })).json();
+    const s = await (await signup(app, { name: "EditCo" })).json();
     const auth = { authorization: "Bearer " + s.token };
     const created = await (await post(app, "/v1/plans", { product_name: "Edit Pro", list_price: 30, floor_price: 20 }, auth)).json();
     const id = created.plan.id;
@@ -315,13 +332,13 @@ describe("merchant signup / onboarding (Spec §9)", () => {
 
     // Auth required; another merchant can't edit it (404, not 403).
     expect((await patch({ list_price: 10 }, {})).status).toBe(401);
-    const other = await (await post(app, "/v1/signup", { name: "OtherCo" })).json();
+    const other = await (await signup(app, { name: "OtherCo" })).json();
     expect((await patch({ list_price: 10 }, { authorization: "Bearer " + other.token })).status).toBe(404);
   });
 
   it("deactivates a plan — widget can't negotiate it, but it stays manageable and reactivates", async () => {
     const { app } = makeApp();
-    const s = await (await post(app, "/v1/signup", { name: "ToggleCo" })).json();
+    const s = await (await signup(app, { name: "ToggleCo" })).json();
     const auth = { authorization: "Bearer " + s.token };
     const id = (await (await post(app, "/v1/plans", { product_name: "Tog Pro", list_price: 30, floor_price: 20 }, auth)).json()).plan.id;
     const patch = (body: unknown) => app.request(`/v1/plans/${id}`, { method: "PATCH", headers: { "content-type": "application/json", ...auth }, body: JSON.stringify(body) });
@@ -345,9 +362,9 @@ describe("merchant signup / onboarding (Spec §9)", () => {
 
   it("rejects signup with no name and a plan that breaks the floor/target invariant", async () => {
     const { app } = makeApp();
-    expect((await post(app, "/v1/signup", { name: "" })).status).toBe(400);
+    expect((await signup(app, { name: "" })).status).toBe(400);
 
-    const s = await (await post(app, "/v1/signup", { name: "BadCo" })).json();
+    const s = await (await signup(app, { name: "BadCo" })).json();
     const auth = { authorization: "Bearer " + s.token };
     // floor ≥ list ⇒ no room (lint rejects) → 400 with the reason.
     const bad = await post(app, "/v1/plans", { product_name: "X", list_price: 20, floor_price: 30 }, auth);
@@ -360,7 +377,7 @@ describe("merchant signup / onboarding (Spec §9)", () => {
 
   it("creates the account AND first plan atomically; an invalid plan creates nothing", async () => {
     const { app } = makeApp();
-    const ok = await post(app, "/v1/signup", {
+    const ok = await signup(app, {
       name: "Atomic Co",
       plan: { product_name: "Atomic Pro", list_price: 30, floor_price: 20 },
     });
@@ -375,7 +392,7 @@ describe("merchant signup / onboarding (Spec §9)", () => {
     expect((await post(app, "/v1/sessions", { plan_id: d.plan.id, end_user_ref: "u" })).status).toBe(201);
 
     // Invalid plan (floor ≥ list) → 400, and NO account/key is returned (nothing created).
-    const bad = await post(app, "/v1/signup", {
+    const bad = await signup(app, {
       name: "BadAtomic",
       plan: { product_name: "X", list_price: 20, floor_price: 30 },
     });
@@ -387,8 +404,10 @@ describe("merchant signup / onboarding (Spec §9)", () => {
 
   it("deletes an account and everything under it, blocking further access", async () => {
     const { app } = makeApp();
-    const s = await (await post(app, "/v1/signup", {
+    const s = await (await signup(app, {
       name: "DelCo",
+      email: "del@test.co",
+      password: "password123",
       plan: { product_name: "Del Pro", list_price: 30, floor_price: 20 },
     })).json();
     const auth = { authorization: "Bearer " + s.token };
@@ -401,22 +420,22 @@ describe("merchant signup / onboarding (Spec §9)", () => {
     const del = await app.request("/v1/account", { method: "DELETE", headers: auth });
     expect(del.status).toBe(200);
 
-    // The plan is gone (not negotiable) and the key no longer logs in.
+    // The plan is gone (not negotiable) and the email no longer logs in.
     expect((await post(app, "/v1/sessions", { plan_id: planId, end_user_ref: "u" })).status).toBe(404);
-    expect((await post(app, "/v1/auth/login", { key: s.key })).status).toBe(401);
+    expect((await post(app, "/v1/auth/login", { email: "del@test.co", password: "password123" })).status).toBe(401);
   });
 });
 
 describe("merchant dashboard auth (Spec §9)", () => {
-  it("logs in with a valid key, rejects a bad one, and gates reads on the token", async () => {
-    const { app, merchantKey } = makeApp();
+  it("logs in with email + password, rejects bad creds, and gates reads on the token", async () => {
+    const { app, email, password } = makeApp();
 
-    // wrong key → 401
-    expect((await post(app, "/v1/auth/login", { key: "bk_merchant_demo_" + "0".repeat(48) })).status).toBe(401);
-    expect((await post(app, "/v1/auth/login", { key: "garbage" })).status).toBe(401);
+    // wrong password / unknown email → 401
+    expect((await post(app, "/v1/auth/login", { email, password: "wrongpassword" })).status).toBe(401);
+    expect((await post(app, "/v1/auth/login", { email: "nobody@nope.test", password })).status).toBe(401);
 
-    // right key → token + merchant
-    const ok = await post(app, "/v1/auth/login", { key: merchantKey });
+    // right creds → token + merchant
+    const ok = await post(app, "/v1/auth/login", { email, password });
     expect(ok.status).toBe(200);
     const body = await ok.json();
     expect(body.token).toBeTruthy();
@@ -433,9 +452,12 @@ describe("merchant dashboard auth (Spec §9)", () => {
     expect((await app.request("/v1/auth/me", { headers: { authorization: "Bearer not.a.token" } })).status).toBe(401);
   });
 
-  it("rotates the API key — new key works, old key is dead, current token survives", async () => {
-    const { app, merchantKey } = makeApp();
-    const auth = await login(app, merchantKey);
+  it("rotates the agent API key — new key authenticates (MCP), old key is dead, dashboard token survives", async () => {
+    const { app, merchantKey, email, password } = makeApp();
+    const auth = await login(app, email, password);
+
+    // The seeded key works for programmatic / MCP auth.
+    expect(await mcpAuthStatus(app, merchantKey)).toBe(200);
 
     const rot = await post(app, "/v1/auth/rotate-key", undefined, auth);
     expect(rot.status).toBe(200);
@@ -443,11 +465,11 @@ describe("merchant dashboard auth (Spec §9)", () => {
     expect(newKey).toMatch(/^bk_merchant_demo_/);
     expect(newKey).not.toBe(merchantKey);
 
-    // Old key no longer logs in; the new one does.
-    expect((await post(app, "/v1/auth/login", { key: merchantKey })).status).toBe(401);
-    expect((await post(app, "/v1/auth/login", { key: newKey })).status).toBe(200);
+    // Old key no longer authenticates; the new one does.
+    expect(await mcpAuthStatus(app, merchantKey)).toBe(401);
+    expect(await mcpAuthStatus(app, newKey)).toBe(200);
 
-    // The session token issued before rotation still works (it's not the key).
+    // The dashboard session token issued before rotation still works (it's not the key).
     expect((await app.request("/v1/auth/me", { headers: auth })).status).toBe(200);
 
     // Rotation requires auth.
@@ -461,6 +483,8 @@ describe("merchant dashboard auth (Spec §9)", () => {
     const mkMerchant = (id: string) => {
       const m = demoMerchant();
       (m as any).id = id;
+      m.email = `${id}@test.co`;
+      m.passwordHash = hashPassword("password123");
       const key = generateMerchantKey(id);
       m.apiKeyHash = hashKey(key);
       return { m, key };
@@ -475,7 +499,7 @@ describe("merchant dashboard auth (Spec §9)", () => {
       authSecret: AUTH_SECRET,
     });
 
-    const authA = await login(app, a.key);
+    const authA = await login(app, "m_a@test.co", "password123");
     // A can read its own plan…
     expect((await app.request("/v1/plans/plan_a/sessions", { headers: authA })).status).toBe(200);
     // …but NOT merchant B's plan (404, not 403 — don't confirm it exists).
@@ -488,8 +512,8 @@ describe("merchant dashboard auth (Spec §9)", () => {
 
 describe("dashboard + analytics + Connect endpoints (Spec §7, §11, §12)", () => {
   it("serves analytics, lint, transcript, connect, and the dashboard page", async () => {
-    const { app, merchantKey } = makeApp();
-    const auth = await login(app, merchantKey); // dashboard reads require a logged-in merchant
+    const { app, email, password } = makeApp();
+    const auth = await login(app, email, password); // dashboard reads require a logged-in merchant
     const get = (path: string) => app.request(path, { headers: auth });
     // one full negotiation so analytics has data
     const s = await startSession(app);

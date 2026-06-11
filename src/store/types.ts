@@ -19,11 +19,13 @@ export type DealKind = "initial" | "reneg_up" | "reneg_down";
 export interface Merchant {
   id: string;
   name: string;
-  /** Contact email captured at signup (not a login credential). */
+  /** Email — the login identifier for the dashboard (unique). */
   email: string | null;
+  /** scrypt hash of the dashboard password (`scrypt$salt$hash`), or null. */
+  passwordHash: string | null;
   /** Connected Stripe account id (acct_...), or null until onboarding completes. */
   stripeConnectId: string | null;
-  /** SHA-256 of the merchant's dashboard API key, or null if none provisioned. */
+  /** SHA-256 of the merchant's programmatic API key (agents / MCP), or null. */
   apiKeyHash: string | null;
   createdAt: number;
 }
@@ -181,8 +183,10 @@ export type NewUsageCycle = Omit<UsageCycle, "id" | "createdAt">;
 
 export interface Store {
   getMerchant(id: string): Promise<Merchant | null>;
+  /** Resolve a merchant by email (login lookup), case-insensitive. */
+  getMerchantByEmail(email: string): Promise<Merchant | null>;
   createMerchant(merchant: Merchant): Promise<Merchant>;
-  updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>): Promise<Merchant>;
+  updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash">>): Promise<Merchant>;
   /** Permanently delete a merchant and everything under it (cascade). */
   deleteMerchant(id: string): Promise<void>;
 

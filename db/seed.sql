@@ -2,9 +2,11 @@
 -- Idempotent: safe to re-run. Apply after db/schema.sql. Lives in the `bouncr`
 -- schema, isolated from anything else in the project.
 
-insert into bouncr.merchants (id, name, stripe_connect_id, created_at)
-values ('merchant_demo', 'Obius', null, 0)
-on conflict (id) do nothing;
+insert into bouncr.merchants (id, name, email, stripe_connect_id, created_at)
+values ('merchant_demo', 'Obius', 'demo@thebouncr.com', null, 0)
+on conflict (id) do update set email = excluded.email;
+-- Demo login email/password and API-key hash are set out-of-band (env/SQL), not
+-- committed here. See ops notes; never commit a password hash to the repo.
 
 insert into bouncr.plans (id, merchant_id, plan_key, currency, config_jsonb, persona_jsonb, policy_jsonb, usage_jsonb, version, active)
 values (
