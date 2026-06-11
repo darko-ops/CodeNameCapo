@@ -5,6 +5,7 @@ import { MemoryStore } from "./store/memory.js";
 import { FakeStripeGateway } from "./stripe/fake.js";
 import { makeTemplateNegotiator } from "./llm/negotiator.js";
 import { demoPlan, demoMerchant } from "./config.js";
+import { generateMerchantKey, hashKey } from "./auth.js";
 
 const PLAN = demoPlan();
 
@@ -15,15 +16,43 @@ function makeApp() {
   return buildApp({ service, stripe, apiKey: null, authSecret: "test_secret" });
 }
 
-const rpc = (app: any, msg: unknown) =>
+// Two merchants, each with a key + plans (one of A's is inactive), one app/store.
+function makeMerchant(id: string) {
+  const m = demoMerchant();
+  (m as any).id = id;
+  const key = generateMerchantKey(id);
+  m.apiKeyHash = hashKey(key);
+  return { m, key };
+}
+function scopedApp() {
+  const a = makeMerchant("m_a");
+  const b = makeMerchant("m_b");
+  const store = new MemoryStore(
+    [
+      { ...demoPlan(), id: "plan_a", planKey: "pa", merchantId: "m_a" },
+      { ...demoPlan(), id: "plan_a_off", planKey: "pao", merchantId: "m_a", active: false },
+      { ...demoPlan(), id: "plan_b", planKey: "pb", merchantId: "m_b" },
+    ],
+    [a.m, b.m],
+  );
+  const stripe = new FakeStripeGateway();
+  const service = new BouncrService({ store, stripe, negotiator: makeTemplateNegotiator(), baseUrl: "http://x" });
+  return { app: buildApp({ service, stripe, apiKey: null, authSecret: "s" }), keyA: a.key, keyB: b.key };
+}
+
+const rpc = (app: any, msg: unknown, key?: string) =>
   app.request("/mcp", {
     method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      ...(key ? { authorization: "Bearer " + key } : {}),
+    },
     body: JSON.stringify(msg),
   });
-const call = async (app: any, msg: unknown) => (await rpc(app, msg)).json();
-async function tool(app: any, name: string, args: unknown, id = 1) {
-  const r = await call(app, { jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+const call = async (app: any, msg: unknown, key?: string) => (await rpc(app, msg, key)).json();
+async function tool(app: any, name: string, args: unknown, id = 1, key?: string) {
+  const r = await call(app, { jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }, key);
   return r.result as { content: any[]; structuredContent?: any; isError?: boolean };
 }
 
@@ -86,5 +115,60 @@ describe("MCP server (Streamable HTTP)", () => {
     const r = await call(app, { jsonrpc: "2.0", id: 7, method: "bogus/method" });
     expect(r.error.code).toBe(-32601);
     expect((await app.request("/mcp")).status).toBe(405);
+  });
+});
+
+describe("MCP merchant-scoped mode", () => {
+  const names = (m: any) => m.result.tools.map((t: any) => t.name);
+
+  it("a valid key resolves the merchant and advertises bouncr_list_plans; keyless does not", async () => {
+    const { app, keyA } = scopedApp();
+    const keyless = await call(app, { jsonrpc: "2.0", id: 1, method: "tools/list" });
+    expect(names(keyless)).not.toContain("bouncr_list_plans");
+    const scoped = await call(app, { jsonrpc: "2.0", id: 1, method: "tools/list" }, keyA);
+    expect(names(scoped)).toContain("bouncr_list_plans");
+  });
+
+  it("rejects an invalid key (401) while keyless mode keeps working", async () => {
+    const { app } = scopedApp();
+    expect((await rpc(app, { jsonrpc: "2.0", id: 1, method: "tools/list" }, "bk_m_a_" + "0".repeat(48))).status).toBe(401);
+    expect((await rpc(app, { jsonrpc: "2.0", id: 1, method: "tools/list" })).status).toBe(200);
+  });
+
+  it("bouncr_list_plans returns only the caller's ACTIVE plans, stripped of policy internals", async () => {
+    const { app, keyA } = scopedApp();
+    const r = await tool(app, "bouncr_list_plans", {}, 1, keyA);
+    const plans = r.structuredContent.plans;
+    expect(plans.map((p: any) => p.plan_id)).toEqual(["plan_a"]); // not the inactive one, not merchant B's
+    expect(plans[0]).toHaveProperty("display_price");
+    expect(plans[0]).toHaveProperty("currency");
+    // policy internals must never cross the MCP boundary
+    expect(JSON.stringify(plans)).not.toMatch(/floor|target|anchor|lambda|concession|threshold/i);
+  });
+
+  it("refuses bouncr_list_plans without a key", async () => {
+    const { app } = scopedApp();
+    expect((await tool(app, "bouncr_list_plans", {}, 1)).isError).toBe(true);
+  });
+
+  it("scopes plans and sessions to the merchant — cross-merchant access is not-found", async () => {
+    const { app, keyA, keyB } = scopedApp();
+
+    // A negotiates its own plan.
+    const startA = await tool(app, "bouncr_start_negotiation", { plan: "plan_a" }, 1, keyA);
+    expect(startA.isError).toBeUndefined();
+    const sA = startA.structuredContent;
+
+    // A cannot start on B's plan — not-found, no existence leak.
+    const cross = await tool(app, "bouncr_start_negotiation", { plan: "plan_b" }, 2, keyA);
+    expect(cross.isError).toBe(true);
+    expect(JSON.stringify(cross)).toMatch(/not found/i);
+
+    // B (a different valid merchant) can't act on A's session even with its token.
+    const hijack = await tool(app, "bouncr_status", { session_id: sA.session_id, session_token: sA.session_token }, 3, keyB);
+    expect(hijack.isError).toBe(true);
+
+    // A can act on its own session.
+    expect((await tool(app, "bouncr_status", { session_id: sA.session_id, session_token: sA.session_token }, 4, keyA)).isError).toBeUndefined();
   });
 });
