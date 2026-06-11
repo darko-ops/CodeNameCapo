@@ -19,6 +19,8 @@ export type DealKind = "initial" | "reneg_up" | "reneg_down";
 export interface Merchant {
   id: string;
   name: string;
+  /** Contact email captured at signup (not a login credential). */
+  email: string | null;
   /** Connected Stripe account id (acct_...), or null until onboarding completes. */
   stripeConnectId: string | null;
   /** SHA-256 of the merchant's dashboard API key, or null if none provisioned. */
@@ -169,9 +171,13 @@ export type NewUsageCycle = Omit<UsageCycle, "id" | "createdAt">;
 
 export interface Store {
   getMerchant(id: string): Promise<Merchant | null>;
+  createMerchant(merchant: Merchant): Promise<Merchant>;
   updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>): Promise<Merchant>;
 
   getPlan(planId: string): Promise<Plan | null>;
+  createPlan(plan: Plan): Promise<Plan>;
+  /** All active plans owned by a merchant (dashboard / onboarding). */
+  listPlansByMerchant(merchantId: string): Promise<Plan[]>;
 
   createSession(rec: NewSession): Promise<SessionRecord>;
   getSession(id: string): Promise<SessionRecord | null>;

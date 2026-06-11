@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Get started — Bouncr</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDEwMCAxMDAiIHJvbGU9ImltZyIgYXJpYS1sYWJlbD0iVGhlQm91bmNyIj4KICA8cmVjdCB4PSI2IiB5PSI2IiB3aWR0aD0iODgiIGhlaWdodD0iODgiIHJ4PSIyNCIgZmlsbD0iIzdDM0FFRCIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iMzQiIHI9IjExIiBmaWxsPSIjMEIwQjEyIi8+CiAgPHBhdGggZD0iTTI2IDY1IEw3NCA1MyIgc3Ryb2tlPSIjMEIwQjEyIiBzdHJva2Utd2lkdGg9IjEyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIGZpbGw9Im5vbmUiLz4KICA8cGF0aCBkPSJNMjYgNTMgTDc0IDY1IiBzdHJva2U9IiMwQjBCMTIiIHN0cm9rZS13aWR0aD0iMTIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgZmlsbD0ibm9uZSIvPgo8L3N2Zz4K" />
+<style>
+  :root { --bg:#0B0B12; --panel:#15151f; --line:#23232e; --text:#ECECF1; --muted:#8b8b99; --accent:#7C3AED; --accent2:#a78bfa; --mint:#34D399; --err:#f87171; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .wrap { max-width:560px; margin:0 auto; padding:40px 22px 80px; }
+  .brand { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .brand svg { width:34px; height:34px; }
+  .brand b { font-size:20px; letter-spacing:-0.4px; }
+  h1 { font-size:26px; letter-spacing:-0.6px; margin:18px 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 24px; }
+  .steps { display:flex; gap:8px; margin-bottom:24px; font-size:12.5px; }
+  .steps .s { flex:1; padding:7px 10px; border:1px solid var(--line); border-radius:9px; color:var(--muted); text-align:center; }
+  .steps .s.on { border-color:var(--accent); color:var(--text); background:rgba(124,58,237,.1); }
+  .steps .s.done { color:var(--mint); border-color:rgba(52,211,153,.3); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:14px 0 5px; }
+  .row { display:flex; gap:12px; }
+  .row > div { flex:1; }
+  input, select { width:100%; background:#0e0e14; border:1px solid var(--line); border-radius:10px; padding:11px 12px; font:inherit; color:var(--text); }
+  input::placeholder { color:#5a5a6a; }
+  input:focus, select:focus { outline:none; border-color:var(--accent); }
+  .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:11px; padding:12px 20px; font:inherit; font-weight:700; cursor:pointer; margin-top:20px; transition:.15s; }
+  button:hover { background:#8b5cf6; }
+  button:disabled { opacity:.55; cursor:default; }
+  .ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  .err { color:var(--err); font-size:13.5px; margin-top:12px; min-height:1em; }
+  .keybox, .snip { margin-top:16px; background:#0d0d13; border:1px solid var(--line); border-radius:11px; padding:14px; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:13px; word-break:break-all; position:relative; }
+  .keybox { border-color:rgba(124,58,237,.4); }
+  .copy { position:absolute; top:8px; right:8px; padding:5px 10px; font-size:12px; margin:0; }
+  .warn { font-size:12.5px; color:var(--accent2); margin-top:8px; }
+  .hidden { display:none; }
+  .foot { margin-top:18px; font-size:13px; color:var(--muted); }
+  .foot a { color:var(--accent2); text-decoration:none; }
+  #preview { margin-top:18px; height:420px; border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <svg viewBox="0 0 100 100" aria-hidden="true"><rect x="8" y="8" width="84" height="84" rx="24" fill="#7C3AED"/><circle cx="50" cy="34" r="10" fill="#0B0B12"/><path d="M27 64 L73 53" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/><path d="M27 53 L73 64" stroke="#0B0B12" stroke-width="11" stroke-linecap="round" fill="none"/></svg>
+    <b>Bouncr</b>
+  </div>
+
+  <div class="steps">
+    <div class="s on" id="step-1">1 · Account</div>
+    <div class="s" id="step-2">2 · Your plan</div>
+    <div class="s" id="step-3">3 · Embed</div>
+  </div>
+
+  <!-- Step 1: account -->
+  <section id="sec-1">
+    <h1>Create your account</h1>
+    <p class="sub">Stand up a bouncer for your product in two minutes.</p>
+    <div class="card">
+      <form id="signup-form" autocomplete="on">
+        <label for="name">Business / product name</label>
+        <input id="name" placeholder="Obius" required />
+        <label for="email">Email <span style="opacity:.6">(optional)</span></label>
+        <input id="email" type="email" placeholder="you@company.com" autocomplete="email" />
+        <div class="err" id="signup-err"></div>
+        <button id="signup-btn" type="submit">Create account →</button>
+      </form>
+    </div>
+    <p class="foot">Already have a key? <a href="/dashboard">Go to the dashboard</a>.</p>
+  </section>
+
+  <!-- Step 1b: show key -->
+  <section id="sec-key" class="hidden">
+    <h1>Save your API key</h1>
+    <p class="sub">This is your dashboard login. We only store a hash — you won't see it again.</p>
+    <div class="card">
+      <div class="keybox" id="key-box"><button class="copy ghost" data-copy="key-box">Copy</button><span id="key-val"></span></div>
+      <div class="warn">⚠ Store this somewhere safe (a password manager). It's shown once.</div>
+      <button id="key-continue">I saved it — continue →</button>
+    </div>
+  </section>
+
+  <!-- Step 2: first plan -->
+  <section id="sec-2" class="hidden">
+    <h1>Set up your first plan</h1>
+    <p class="sub">A few essentials — the rest gets sensible defaults you can tune later.</p>
+    <div class="card">
+      <form id="plan-form">
+        <label for="product">Product name (what the bouncer is selling)</label>
+        <input id="product" placeholder="Obius Pro" required />
+        <div class="row">
+          <div>
+            <label for="list">List price ($/mo)</label>
+            <input id="list" type="number" min="1" step="0.01" placeholder="30" required />
+          </div>
+          <div>
+            <label for="floor">Floor — your cost ($/mo)</label>
+            <input id="floor" type="number" min="1" step="0.01" placeholder="22" required />
+          </div>
+          <div>
+            <label for="target">Target <span style="opacity:.6">(optional)</span></label>
+            <input id="target" type="number" min="1" step="0.01" placeholder="= list" />
+          </div>
+        </div>
+        <div class="hint">The bouncer opens above list, aims at target, and will never close below your floor.</div>
+        <div class="row">
+          <div>
+            <label for="persona">Bouncer name</label>
+            <input id="persona" placeholder="Vinny" />
+          </div>
+          <div>
+            <label for="style">Personality</label>
+            <select id="style">
+              <option value="sassy">Sassy</option>
+              <option value="playful">Playful</option>
+              <option value="deadpan">Deadpan</option>
+              <option value="professional">Professional</option>
+            </select>
+          </div>
+        </div>
+        <div class="err" id="plan-err"></div>
+        <button id="plan-btn" type="submit">Create plan →</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Step 3: embed -->
+  <section id="sec-3" class="hidden">
+    <h1>Drop it on your pricing page</h1>
+    <p class="sub">One tag mounts your bouncer wherever this element is.</p>
+    <div class="card">
+      <div class="snip" id="snip-box"><button class="copy ghost" data-copy="snip-box">Copy</button><span id="snip-val"></span></div>
+      <p class="hint" style="margin-top:12px">Add a target element too: <code>&lt;div id="bouncr"&gt;&lt;/div&gt;</code></p>
+      <div id="preview"></div>
+      <button id="to-dashboard">Open your dashboard →</button>
+    </div>
+  </section>
+</div>
+
+<script src="/embed.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const TKEY = "bouncr_dash_token";
+  const base = location.origin;
+  let token = null, newPlanId = null;
+
+  function show(sec) {
+    ["sec-1","sec-key","sec-2","sec-3"].forEach((s) => $(s).classList.add("hidden"));
+    $(sec).classList.remove("hidden");
+  }
+  function mark(stepNum) {
+    [1,2,3].forEach((n) => {
+      const el = $("step-" + n);
+      el.className = "s" + (n < stepNum ? " done" : n === stepNum ? " on" : "");
+    });
+  }
+  function copyText(id) {
+    const t = $(id.replace("-box","-val")).textContent;
+    navigator.clipboard && navigator.clipboard.writeText(t);
+  }
+  document.querySelectorAll(".copy").forEach((b) => b.onclick = (e) => { e.preventDefault(); copyText(b.dataset.copy); b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1200); });
+
+  // Step 1 — signup
+  $("signup-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("signup-err").textContent = "";
+    $("signup-btn").disabled = true;
+    try {
+      const r = await fetch(base + "/v1/signup", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: $("name").value.trim(), email: $("email").value.trim() || null }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "signup failed");
+      token = d.token; localStorage.setItem(TKEY, token);
+      $("key-val").textContent = d.key;
+      mark(1); show("sec-key");
+    } catch (err) { $("signup-err").textContent = err.message; }
+    finally { $("signup-btn").disabled = false; }
+  });
+  $("key-continue").onclick = () => { mark(2); show("sec-2"); };
+
+  // Step 2 — create plan
+  $("plan-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("plan-err").textContent = "";
+    $("plan-btn").disabled = true;
+    try {
+      const numv = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : null; };
+      const body = {
+        product_name: $("product").value.trim(),
+        list_price: numv("list"),
+        floor_price: numv("floor"),
+        persona_name: $("persona").value.trim() || undefined,
+        persona_style: $("style").value,
+      };
+      const tv = numv("target"); if (tv !== null) body.target_price = tv;
+      const r = await fetch(base + "/v1/plans", {
+        method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + token },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "could not create plan");
+      newPlanId = d.plan.id;
+      $("snip-val").textContent = d.embed.snippet;
+      mark(3); show("sec-3");
+      try { window.Bouncr && Bouncr.mount({ el: "#preview", planId: newPlanId, userRef: "preview_" + Math.random().toString(36).slice(2,8) }); } catch (_) {}
+    } catch (err) { $("plan-err").textContent = err.message; }
+    finally { $("plan-btn").disabled = false; }
+  });
+
+  $("to-dashboard").onclick = () => { location.href = "/dashboard"; };
+})();
+</script>
+</body>
+</html>

@@ -48,6 +48,12 @@ export class MemoryStore implements Store {
     return m ? clone(m) : null;
   }
 
+  async createMerchant(merchant: Merchant): Promise<Merchant> {
+    if (this.merchants.has(merchant.id)) throw new Error(`merchant ${merchant.id} already exists`);
+    this.merchants.set(merchant.id, clone(merchant));
+    return clone(merchant);
+  }
+
   async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>): Promise<Merchant> {
     const m = this.merchants.get(id);
     if (!m) throw new Error(`merchant ${id} not found`);
@@ -60,6 +66,16 @@ export class MemoryStore implements Store {
     // friendly key (e.g. "pro_monthly"), internal callers pass the id.
     const p = this.plans.get(ref) ?? [...this.plans.values()].find((x) => x.planKey === ref);
     return p ? clone(p) : null;
+  }
+
+  async createPlan(plan: Plan): Promise<Plan> {
+    if (this.plans.has(plan.id)) throw new Error(`plan ${plan.id} already exists`);
+    this.plans.set(plan.id, clone(plan));
+    return clone(plan);
+  }
+
+  async listPlansByMerchant(merchantId: string): Promise<Plan[]> {
+    return [...this.plans.values()].filter((p) => p.merchantId === merchantId && p.active).map(clone);
   }
 
   async createSession(rec: NewSession): Promise<SessionRecord> {

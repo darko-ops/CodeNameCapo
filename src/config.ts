@@ -21,7 +21,7 @@ import { BouncrService } from "./service.js";
 
 /** The demo merchant Bouncr ships with (Connect not yet onboarded). */
 export function demoMerchant(): Merchant {
-  return { id: "merchant_demo", name: "Obius", stripeConnectId: null, apiKeyHash: null, createdAt: 0 };
+  return { id: "merchant_demo", name: "Obius", email: null, stripeConnectId: null, apiKeyHash: null, createdAt: 0 };
 }
 
 /** The demo plan Bouncr ships with — the CLI/dogfood "pro_monthly" tier. */

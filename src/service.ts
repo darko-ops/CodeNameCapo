@@ -10,9 +10,13 @@
  * runs offline in tests with the in-memory store + fake Stripe + template negotiator.
  */
 import { randomUUID } from "node:crypto";
-import { openSession, type Action, type SessionState } from "./engine.js";
+import { openSession, round2, type Action, type Config, type SessionState } from "./engine.js";
 import type { Store, Plan, Merchant, SessionRecord, TurnRecord, DealRecord } from "./store/types.js";
+import type { Persona } from "./llm/types.js";
 import { parseMerchantKey, hashKey, safeEqualHex, generateMerchantKey } from "./auth.js";
+
+/** Coerce to a finite number, or null. */
+const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
 import type { StripeGateway } from "./stripe/gateway.js";
 import type { WebhookEvent } from "./stripe/gateway.js";
 import type { Negotiator } from "./llm/negotiator.js";
@@ -169,6 +173,110 @@ export class BouncrService {
       throw new ServiceError("bad_request", "a valid email is required");
     }
     await this.store.appendEvent("waitlist.signup", { email: e, source: source ?? null, at: this.now() });
+  }
+
+  // --- Merchant signup / onboarding (Spec §9) ------------------------------
+
+  /**
+   * Create a new merchant and mint its dashboard API key. Returns the merchant
+   * and the plaintext key (shown to the user ONCE — only the hash is stored).
+   */
+  async signupMerchant(input: { name: string; email?: string | null }): Promise<{ merchant: Merchant; key: string }> {
+    const name = input.name?.trim();
+    if (!name) throw new ServiceError("bad_request", "a business name is required");
+    const email = input.email?.trim() || null;
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new ServiceError("bad_request", "email is not valid");
+    }
+    const id = `merchant_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const key = generateMerchantKey(id);
+    const merchant = await this.store.createMerchant({
+      id,
+      name,
+      email,
+      stripeConnectId: null,
+      apiKeyHash: hashKey(key),
+      createdAt: this.now(),
+    });
+    await this.store.appendEvent("merchant.signup", { merchantId: id, name, hasEmail: Boolean(email) });
+    return { merchant, key };
+  }
+
+  /** A merchant's own plans (onboarding / dashboard). */
+  async listPlans(merchantId: string): Promise<Plan[]> {
+    return this.store.listPlansByMerchant(merchantId);
+  }
+
+  /**
+   * Create the merchant's first (or next) plan from a few essentials; everything
+   * else gets sensible, lint-clean defaults. The config is linted before storing
+   * — a misconfigured plan (e.g. floor ≥ target) is rejected with the reasons.
+   */
+  async createPlan(
+    merchantId: string,
+    input: {
+      productName: string;
+      listPrice: number;
+      floorPrice: number;
+      targetPrice?: number;
+      currency?: string;
+      personaName?: string;
+      personaStyle?: Persona["style"];
+    },
+  ): Promise<Plan> {
+    const productName = input.productName?.trim();
+    if (!productName) throw new ServiceError("bad_request", "a product name is required");
+    const listPrice = num(input.listPrice);
+    const floorPrice = num(input.floorPrice);
+    if (listPrice === null || floorPrice === null) {
+      throw new ServiceError("bad_request", "listPrice and floorPrice are required numbers");
+    }
+    // Aim at the list price by default; anchor opens 1.6× above it.
+    const targetPrice = input.targetPrice != null ? num(input.targetPrice)! : listPrice;
+
+    const config: Config = {
+      listPrice,
+      floorPrice,
+      targetPrice,
+      anchorMultiplier: 1.6,
+      maxRounds: 6,
+      maxDurationH: 48,
+      acceptThreshold: 0.92,
+      minConcession: Math.max(1, round2((targetPrice - floorPrice) * 0.08)),
+      lambda: 0.55,
+    };
+    const policy = { cooldownHours: 72, maxMessages: 30 };
+    const lint = lintConfig(config, policy);
+    if (!lint.ok) throw new ServiceError("bad_request", `plan config invalid: ${lint.errors.join("; ")}`);
+
+    const id = `plan_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    return this.store.createPlan({
+      id,
+      merchantId,
+      planKey: id, // the embed references the unique id; no cross-merchant key collisions
+      currency: (input.currency ?? "usd").toLowerCase(),
+      config,
+      persona: {
+        name: input.personaName?.trim() || "Vinny",
+        productName,
+        style: input.personaStyle ?? "sassy",
+        roastLevel: 2,
+      },
+      policy,
+      usage: {
+        bandCeiling: 1000,
+        breachCyclesRequired: 3,
+        costPerUnit: 0.004,
+        costPlusMargin: 1.25,
+        renegAnchorMultiplier: 1.7,
+        downwardEnabled: false,
+        downwardFloorRatio: 0.1,
+        downwardMinCycles: 3,
+      },
+      version: 1,
+      active: true,
+      applicationFeePercent: null, // inherits the platform take-rate
+    });
   }
 
   // --- Merchant auth (dashboard) -------------------------------------------

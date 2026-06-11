@@ -23,7 +23,7 @@ import type { StripeGateway } from "./stripe/gateway.js";
 import { BouncrService, ServiceError } from "./service.js";
 import { RateLimiter, type RateRule } from "./ratelimit.js";
 import { signSession, verifySession } from "./auth.js";
-import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML } from "./widget/assets.js";
+import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML } from "./widget/assets.js";
 
 export interface AppDeps {
   service: BouncrService;
@@ -101,6 +101,42 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     const info = await service.getMerchantInfo(c.get("merchantId"));
     if (!info) return c.json({ error: "merchant not found", code: "not_found" }, 404);
     return c.json({ merchant: info });
+  });
+
+  // --- merchant signup / onboarding (Spec §9) ------------------------------
+  // Public + rate-limited. Creates a merchant, mints its dashboard key (returned
+  // ONCE), and signs them straight in so onboarding can continue.
+  app.post("/v1/signup", async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 5 }, { windowMs: 86_400_000, max: 60 }])) {
+      return c.json({ error: "too many signups, try again later", code: "conflict" }, 429);
+    }
+    const body = await safeJson(c);
+    const { merchant, key } = await service.signupMerchant({ name: str(body.name) ?? "", email: str(body.email) });
+    const { token, expiresAt } = signSession(merchant.id, deps.authSecret, DASHBOARD_TTL_MS, Date.now());
+    return c.json(
+      { merchant: { id: merchant.id, name: merchant.name }, key, token, expires_at: expiresAt },
+      201,
+    );
+  });
+
+  // Plans: create / list — dashboard token, scoped to the merchant.
+  app.post("/v1/plans", dashboardAuth, async (c) => {
+    const b = await safeJson(c);
+    const plan = await service.createPlan(c.get("merchantId"), {
+      productName: str(b.product_name) ?? "",
+      listPrice: num(b.list_price) ?? NaN,
+      floorPrice: num(b.floor_price) ?? NaN,
+      ...(num(b.target_price) !== null ? { targetPrice: num(b.target_price)! } : {}),
+      ...(str(b.currency) ? { currency: str(b.currency)! } : {}),
+      ...(str(b.persona_name) ? { personaName: str(b.persona_name)! } : {}),
+      ...(personaStyle(b.persona_style) ? { personaStyle: personaStyle(b.persona_style)! } : {}),
+    });
+    return c.json({ plan: planJson(plan), embed: embedInfo(baseFromReq(c), plan.id) }, 201);
+  });
+
+  app.get("/v1/plans", dashboardAuth, async (c) => {
+    const plans = await service.listPlans(c.get("merchantId"));
+    return c.json({ plans: plans.map(planJson) });
   });
 
   // --- merchant routes (API key) -------------------------------------------
@@ -331,6 +367,8 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
   app.get("/playground", (c) => c.html(DEMO_HTML)); // explicit demo path
   app.get("/widget", (c) => c.html(WIDGET_HTML));
   app.get("/dashboard", (c) => c.html(DASHBOARD_HTML)); // merchant dashboard (Spec §11)
+  app.get("/signup", (c) => c.html(ONBOARD_HTML)); // merchant onboarding wizard (Spec §9)
+  app.get("/start", (c) => c.html(ONBOARD_HTML));
   app.get("/embed.js", (c) => {
     c.header("content-type", "application/javascript; charset=utf-8");
     return c.body(EMBED_JS);
@@ -376,6 +414,35 @@ function turnJson(r: import("./service.js").TurnResponse) {
  */
 function cannedTurn(reply: string) {
   return { reply, state: null, action: null, is_final: false };
+}
+
+const PERSONA_STYLES = ["sassy", "professional", "playful", "deadpan"] as const;
+function personaStyle(x: unknown): (typeof PERSONA_STYLES)[number] | null {
+  return typeof x === "string" && (PERSONA_STYLES as readonly string[]).includes(x)
+    ? (x as (typeof PERSONA_STYLES)[number])
+    : null;
+}
+
+/** Public shape of a plan for the dashboard / onboarding. */
+function planJson(p: import("./store/types.js").Plan) {
+  return {
+    id: p.id,
+    plan_key: p.planKey,
+    currency: p.currency,
+    list_price: p.config.listPrice,
+    floor_price: p.config.floorPrice,
+    target_price: p.config.targetPrice,
+    persona: { name: p.persona.name, product_name: p.persona.productName, style: p.persona.style },
+    active: p.active,
+  };
+}
+
+/** The one-line embed snippet a merchant drops on their pricing page. */
+function embedInfo(base: string, planId: string) {
+  return {
+    plan_id: planId,
+    snippet: `<script src="${base}/embed.js" data-plan="${planId}" data-mount="#bouncr"></script>`,
+  };
 }
 
 /** Best-effort client IP for rate limiting (Vercel sets x-forwarded-for). */

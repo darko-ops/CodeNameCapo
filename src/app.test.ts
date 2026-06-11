@@ -247,6 +247,62 @@ describe("landing page host routing (thebouncr.com)", () => {
   });
 });
 
+describe("merchant signup / onboarding (Spec §9)", () => {
+  it("signs up a merchant, returns a usable key + token, and creates a first plan", async () => {
+    const { app } = makeApp();
+
+    // 1. Signup → merchant, plaintext key, auto-login token.
+    const su = await post(app, "/v1/signup", { name: "Acme Co", email: "founder@acme.com" });
+    expect(su.status).toBe(201);
+    const s = await su.json();
+    expect(s.merchant.id).toMatch(/^merchant_/);
+    expect(s.key).toMatch(/^bk_merchant_/);
+    expect(s.token).toBeTruthy();
+
+    // The returned key actually logs in (independent of the auto-login token).
+    expect((await post(app, "/v1/auth/login", { key: s.key })).status).toBe(200);
+
+    const auth = { authorization: "Bearer " + s.token };
+    // 2. No plans yet.
+    expect((await (await app.request("/v1/plans", { headers: auth })).json()).plans).toHaveLength(0);
+
+    // 3. Create a plan from essentials → returns the plan + an embed snippet.
+    const cp = await post(app, "/v1/plans", { product_name: "Acme Pro", list_price: 40, floor_price: 25, persona_name: "Sal" }, auth);
+    expect(cp.status).toBe(201);
+    const { plan, embed } = await cp.json();
+    expect(plan.id).toMatch(/^plan_/);
+    expect(plan.list_price).toBe(40);
+    expect(plan.floor_price).toBe(25);
+    expect(plan.target_price).toBe(40); // defaults to list
+    expect(plan.persona.name).toBe("Sal");
+    expect(embed.snippet).toContain(`data-plan="${plan.id}"`);
+
+    // 4. It now shows in the merchant's plans, scoped to them.
+    const list = await (await app.request("/v1/plans", { headers: auth })).json();
+    expect(list.plans).toHaveLength(1);
+    expect(list.plans[0].id).toBe(plan.id);
+
+    // 5. The new plan is immediately negotiable through the widget.
+    const sess = await post(app, "/v1/sessions", { plan_id: plan.id, end_user_ref: "buyer" });
+    expect(sess.status).toBe(201);
+  });
+
+  it("rejects signup with no name and a plan that breaks the floor/target invariant", async () => {
+    const { app } = makeApp();
+    expect((await post(app, "/v1/signup", { name: "" })).status).toBe(400);
+
+    const s = await (await post(app, "/v1/signup", { name: "BadCo" })).json();
+    const auth = { authorization: "Bearer " + s.token };
+    // floor ≥ list ⇒ no room (lint rejects) → 400 with the reason.
+    const bad = await post(app, "/v1/plans", { product_name: "X", list_price: 20, floor_price: 30 }, auth);
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toMatch(/invalid|target|floor/i);
+
+    // Creating a plan requires auth.
+    expect((await post(app, "/v1/plans", { product_name: "X", list_price: 40, floor_price: 20 })).status).toBe(401);
+  });
+});
+
 describe("merchant dashboard auth (Spec §9)", () => {
   it("logs in with a valid key, rejects a bad one, and gates reads on the token", async () => {
     const { app, merchantKey } = makeApp();

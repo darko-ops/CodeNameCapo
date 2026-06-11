@@ -59,15 +59,15 @@ export class PostgresStore implements Store {
 
   async getMerchant(id: string): Promise<Merchant | null> {
     const rows = await this.sql`select * from bouncr.merchants where id = ${id} limit 1`;
-    const r = rows[0];
-    if (!r) return null;
-    return {
-      id: r.id,
-      name: r.name,
-      stripeConnectId: r.stripe_connect_id ?? null,
-      apiKeyHash: r.api_key_hash ?? null,
-      createdAt: Number(r.created_at),
-    };
+    return rows[0] ? mapMerchant(rows[0]) : null;
+  }
+
+  async createMerchant(m: Merchant): Promise<Merchant> {
+    const rows = await this.sql`
+      insert into bouncr.merchants (id, name, email, stripe_connect_id, api_key_hash, created_at)
+      values (${m.id}, ${m.name}, ${m.email}, ${m.stripeConnectId}, ${m.apiKeyHash}, ${m.createdAt})
+      returning *`;
+    return mapMerchant(rows[0]);
   }
 
   async updateMerchant(
@@ -80,35 +80,34 @@ export class PostgresStore implements Store {
         api_key_hash      = coalesce(${patch.apiKeyHash ?? null}, api_key_hash)
       where id = ${id} returning *`;
     if (!rows[0]) throw new Error(`merchant ${id} not found`);
-    const r = rows[0];
-    return {
-      id: r.id,
-      name: r.name,
-      stripeConnectId: r.stripe_connect_id ?? null,
-      apiKeyHash: r.api_key_hash ?? null,
-      createdAt: Number(r.created_at),
-    };
+    return mapMerchant(rows[0]);
   }
 
   async getPlan(ref: string): Promise<Plan | null> {
     // Resolve by internal id OR public plan_key (widgets use the friendly key).
     const rows = await this.sql`
       select * from bouncr.plans where (id = ${ref} or plan_key = ${ref}) and active = true limit 1`;
-    const r = rows[0];
-    if (!r) return null;
-    return {
-      id: r.id,
-      merchantId: r.merchant_id,
-      planKey: r.plan_key,
-      currency: r.currency,
-      config: r.config_jsonb as Config,
-      persona: r.persona_jsonb as Persona,
-      policy: r.policy_jsonb as NegotiationPolicy,
-      usage: r.usage_jsonb as UsagePolicy,
-      version: r.version,
-      active: r.active,
-      applicationFeePercent: r.application_fee_percent == null ? null : Number(r.application_fee_percent),
-    };
+    return rows[0] ? mapPlan(rows[0]) : null;
+  }
+
+  async createPlan(p: Plan): Promise<Plan> {
+    const rows = await this.sql`
+      insert into bouncr.plans
+        (id, merchant_id, plan_key, currency, config_jsonb, persona_jsonb, policy_jsonb, usage_jsonb,
+         version, active, application_fee_percent)
+      values
+        (${p.id}, ${p.merchantId}, ${p.planKey}, ${p.currency},
+         ${this.sql.json(p.config as any)}, ${this.sql.json(p.persona as any)},
+         ${this.sql.json(p.policy as any)}, ${this.sql.json(p.usage as any)},
+         ${p.version}, ${p.active}, ${p.applicationFeePercent ?? null})
+      returning *`;
+    return mapPlan(rows[0]);
+  }
+
+  async listPlansByMerchant(merchantId: string): Promise<Plan[]> {
+    const rows = await this.sql`
+      select * from bouncr.plans where merchant_id = ${merchantId} and active = true order by id`;
+    return rows.map(mapPlan);
   }
 
   async createSession(rec: NewSession): Promise<SessionRecord> {
@@ -320,4 +319,33 @@ export class PostgresStore implements Store {
       createdAt: Number(r.created_at),
     };
   }
+}
+
+// --- row mappers -----------------------------------------------------------
+
+function mapMerchant(r: any): Merchant {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email ?? null,
+    stripeConnectId: r.stripe_connect_id ?? null,
+    apiKeyHash: r.api_key_hash ?? null,
+    createdAt: Number(r.created_at),
+  };
+}
+
+function mapPlan(r: any): Plan {
+  return {
+    id: r.id,
+    merchantId: r.merchant_id,
+    planKey: r.plan_key,
+    currency: r.currency,
+    config: r.config_jsonb as Config,
+    persona: r.persona_jsonb as Persona,
+    policy: r.policy_jsonb as NegotiationPolicy,
+    usage: r.usage_jsonb as UsagePolicy,
+    version: r.version,
+    active: r.active,
+    applicationFeePercent: r.application_fee_percent == null ? null : Number(r.application_fee_percent),
+  };
 }
