@@ -119,6 +119,16 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     return c.json({ key });
   });
 
+  // Change the dashboard password — requires the current password (re-auth).
+  app.post("/v1/auth/change-password", dashboardAuth, async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 5 }])) {
+      return c.json({ error: "too many attempts, slow down", code: "conflict" }, 429);
+    }
+    const b = await safeJson(c);
+    await service.changePassword(c.get("merchantId"), str(b.current_password) ?? "", str(b.new_password) ?? "");
+    return c.json({ ok: true });
+  });
+
   // --- merchant signup / onboarding (Spec §9) ------------------------------
   // Public + rate-limited. Creates a merchant, mints its dashboard key (returned
   // ONCE), and signs them straight in so onboarding can continue.

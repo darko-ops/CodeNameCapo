@@ -205,6 +205,17 @@
 
       <div class="seclabel">Account</div>
       <div class="card">
+        <h3>Password</h3>
+        <p class="meta" style="margin:0 0 12px">Change your dashboard login password. You'll stay signed in on this device.</p>
+        <form id="pw-form" autocomplete="off">
+          <input id="pw-current" type="password" autocomplete="current-password" placeholder="current password" />
+          <input id="pw-new" type="password" autocomplete="new-password" placeholder="new password (8+ characters)" style="margin-top:8px" />
+          <input id="pw-confirm" type="password" autocomplete="new-password" placeholder="confirm new password" style="margin-top:8px" />
+          <div style="margin-top:12px"><button class="ghost" id="pw-btn" type="submit">Update password</button> <span class="meta" id="pw-status"></span></div>
+        </form>
+      </div>
+
+      <div class="card">
         <h3>API key</h3>
         <p class="meta" style="margin:0 0 12px">For connecting AI agents (MCP) and server-to-server calls. You log into this dashboard with your email and password, not this key. Rotate it if it may be exposed; the old key stops working immediately and your dashboard session stays signed in.</p>
         <button class="ghost" id="rotate-btn">Rotate API key</button>
@@ -311,6 +322,24 @@
     if (navigator.clipboard) navigator.clipboard.writeText($("newkey-val").textContent);
     e.target.textContent = "Copied"; setTimeout(() => (e.target.textContent = "Copy"), 1200);
   };
+
+  $("pw-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const cur = $("pw-current").value, nw = $("pw-new").value, conf = $("pw-confirm").value;
+    const set = (msg, ok) => { $("pw-status").innerHTML = ok ? '<span style="color:var(--mint)">' + msg + "</span>" : '<span class="err">' + msg + "</span>"; };
+    if (!cur || !nw) return set("enter your current and new password", false);
+    if (nw.length < 8) return set("new password must be at least 8 characters", false);
+    if (nw !== conf) return set("new passwords don't match", false);
+    $("pw-btn").disabled = true; set("updating…", true);
+    try {
+      const r = guard(await fetch(base() + "/v1/auth/change-password", {
+        method: "POST", headers: { ...authHeaders(), "content-type": "application/json" },
+        body: JSON.stringify({ current_password: cur, new_password: nw }),
+      }));
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "could not change password");
+      $("pw-form").reset(); set("Password updated.", true);
+    } catch (err) { set(err.message, false); } finally { $("pw-btn").disabled = false; }
+  });
 
   // --- plans ---------------------------------------------------------------
   async function loadPlans() {

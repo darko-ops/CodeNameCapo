@@ -252,6 +252,24 @@ export class BouncrService {
     return merchant;
   }
 
+  /**
+   * Change a merchant's dashboard password. Requires the current password
+   * (re-auth), so a stolen session token alone can't lock the owner out. The
+   * dashboard token stays valid — only the stored hash changes.
+   */
+  async changePassword(merchantId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const merchant = await this.store.getMerchant(merchantId);
+    if (!merchant) throw new ServiceError("not_found", "merchant not found");
+    if (!verifyPassword(currentPassword ?? "", merchant.passwordHash)) {
+      throw new ServiceError("unauthorized", "current password is incorrect");
+    }
+    if ((newPassword ?? "").length < 8) {
+      throw new ServiceError("bad_request", "new password must be at least 8 characters");
+    }
+    await this.store.updateMerchant(merchantId, { passwordHash: hashPassword(newPassword) });
+    await this.store.appendEvent("merchant.password_changed", { merchantId });
+  }
+
   /** A merchant's own plans (onboarding / dashboard). */
   async listPlans(merchantId: string): Promise<Plan[]> {
     return this.store.listPlansByMerchant(merchantId);

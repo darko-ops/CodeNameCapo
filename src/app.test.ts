@@ -476,6 +476,28 @@ describe("merchant dashboard auth (Spec §9)", () => {
     expect((await post(app, "/v1/auth/rotate-key")).status).toBe(401);
   });
 
+  it("changes the password — needs the current one, then the new one logs in", async () => {
+    const { app, email, password } = makeApp();
+    const auth = await login(app, email, password);
+    const change = (body: unknown, headers: Record<string, string> = auth) =>
+      post(app, "/v1/auth/change-password", body, headers);
+
+    // Requires auth.
+    expect((await change({ current_password: password, new_password: "brandnewpass1" }, {})).status).toBe(401);
+    // Wrong current password → 401.
+    expect((await change({ current_password: "nope", new_password: "brandnewpass1" })).status).toBe(401);
+    // Too-short new password → 400.
+    expect((await change({ current_password: password, new_password: "short" })).status).toBe(400);
+
+    // Valid change → 200; the old password no longer logs in, the new one does.
+    expect((await change({ current_password: password, new_password: "brandnewpass1" })).status).toBe(200);
+    expect((await post(app, "/v1/auth/login", { email, password })).status).toBe(401);
+    expect((await post(app, "/v1/auth/login", { email, password: "brandnewpass1" })).status).toBe(200);
+
+    // The session token issued before the change still works (it's not the password).
+    expect((await app.request("/v1/auth/me", { headers: auth })).status).toBe(200);
+  });
+
   it("scopes data to the token's merchant — no cross-merchant reads", async () => {
     // Two merchants, each with their own plan, sharing one app/store.
     const planA = { ...demoPlan(), id: "plan_a", planKey: "a", merchantId: "m_a" };
