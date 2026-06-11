@@ -60,16 +60,34 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, null, CFG, 0)).toEqual({ type: "hold", amount: 48 });
   });
 
-  it("holds firm (won't be walked down) when the offer isn't justified", () => {
-    // A below-target lowball with no reasoning: concede=false → hold, not counter.
+  it("gives a little goodwill room then holds at the soft floor (can't be walked down)", () => {
+    const softFloor = Math.max(CFG.targetPrice, anchor(CFG) - (anchor(CFG) - CFG.targetPrice) * 0.25);
     let s = openSession(CFG, 0);
+
+    // First unjustified offer: a small couple-point concession to start the dance.
     const a = decide(s, 12, CFG, 0, { concede: false });
-    expect(a).toEqual({ type: "hold", amount: s.currentAsk }); // ask doesn't move
-    // Incrementing the number without a reason still doesn't lower the ask.
-    s = applyAction(s, 12, a);
-    const a2 = decide(s, 15, CFG, 0, { concede: false });
-    expect(a2.type).toBe("hold");
-    expect("amount" in a2 && a2.amount).toBe(s.currentAsk); // same ask as before
+    expect(a.type).toBe("counter");
+    if (a.type === "counter") {
+      expect(a.amount).toBeLessThan(s.currentAsk);
+      expect(a.amount).toBeGreaterThanOrEqual(softFloor - 1e-9);
+    }
+
+    // Keep spitting numbers with no reason: the ask drifts to the soft floor and
+    // then STICKS — it never gets walked below it without justification.
+    let holds = false;
+    for (let i = 0; i < 12; i++) {
+      const act = decide(s, 12, CFG, 0, { concede: false });
+      expect(act.type === "counter" || act.type === "hold" || act.type === "walk").toBe(true);
+      if (act.type === "hold") {
+        expect(act.amount).toBeGreaterThanOrEqual(softFloor - 1e-9);
+        holds = true;
+        break;
+      }
+      if (act.type === "walk") break;
+      s = applyAction(s, 12, act);
+      expect(s.currentAsk).toBeGreaterThanOrEqual(softFloor - 1e-9); // never below soft floor
+    }
+    expect(holds).toBe(true);
   });
 
   it("still accepts a genuinely good offer even without justification", () => {

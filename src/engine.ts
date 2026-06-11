@@ -158,10 +158,20 @@ export function decide(
     return accept(u, c);
   }
 
-  // --- No justification => hold the line (anti-"walk-it-down") -------------
-  // The price only moves when the user gives a real reason. A bare lower/higher
-  // number gets the same ask back; persist with no case and rounds run out -> walk.
+  // --- No justification => small goodwill room, then hold ------------------
+  // The opening move is partly free: the engine drifts down a couple points to
+  // start the dance. But it won't go below a SOFT FLOOR without a real reason —
+  // so the price can't be walked down just by naming numbers. To get a real
+  // (sub-target) discount, the user has to make a case. Good offers still close
+  // (handled above); persistent reason-less pushing eventually runs out -> walk.
   if (!concede) {
+    const a = anchor(c);
+    const softFloor = round2(Math.max(c.targetPrice, a - (a - c.targetPrice) * 0.25));
+    if (s.currentAsk > softFloor + 0.01) {
+      const step = Math.max(2, c.minConcession); // "settle a couple points"
+      const amount = round2(Math.max(softFloor, s.currentAsk - step));
+      return { type: "counter", amount, isFinal: false };
+    }
     if (s.round >= c.maxRounds) return { type: "walk" };
     return { type: "hold", amount: s.currentAsk };
   }
