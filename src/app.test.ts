@@ -147,6 +147,32 @@ describe("embeddable widget assets (Spec §10)", () => {
   });
 });
 
+describe("landing page host routing (thebouncr.com)", () => {
+  it("serves the landing on thebouncr.com and the playground elsewhere", async () => {
+    const { app } = makeApp();
+
+    const landing = await app.request("/", { headers: { host: "thebouncr.com" } });
+    expect(landing.status).toBe(200);
+    expect(await landing.text()).toContain("Your paywall should");
+
+    const wwwLanding = await app.request("/", { headers: { host: "www.thebouncr.com" } });
+    expect(await wwwLanding.text()).toContain("Your paywall should");
+
+    // x-forwarded-host (what Vercel's edge sets) also routes to the landing.
+    const fwd = await app.request("/", { headers: { "x-forwarded-host": "thebouncr.com", host: "bouncr.vercel.app" } });
+    expect(await fwd.text()).toContain("Your paywall should");
+
+    // bouncr.tech (and the default test host) keeps the live playground.
+    const demo = await app.request("/", { headers: { host: "bouncr.tech" } });
+    expect(await demo.text()).not.toContain("Your paywall should");
+
+    // landing is always reachable explicitly for preview.
+    expect((await app.request("/landing")).status).toBe(200);
+    expect(await (await app.request("/landing")).text()).toContain("Your paywall should");
+    expect((await app.request("/playground")).status).toBe(200);
+  });
+});
+
 describe("dashboard + analytics + Connect endpoints (Spec §7, §11, §12)", () => {
   it("serves analytics, lint, transcript, connect, and the dashboard page", async () => {
     const { app } = makeApp();

@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bouncr — your paywall should haggle</title>
+<meta name="description" content="A drop-in AI bouncer that negotiates each user's price — with a policy engine that guarantees you never sell below cost. Negotiated subscription pricing, as infrastructure." />
+<meta property="og:title" content="Bouncr — your paywall should haggle" />
+<meta property="og:description" content="A drop-in negotiation agent for any subscription app. The bouncer that can't be jailbroken." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0b0f;
+    --bg2: #111118;
+    --panel: #16161f;
+    --line: #23232e;
+    --text: #ECECF1;
+    --muted: #8b8b99;
+    --accent: #7C3AED;
+    --accent2: #a78bfa;
+    --gold: #e8b75a;
+    --ok: #34d399;
+    --maxw: 1080px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased; line-height: 1.5; overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  .accent { color: var(--accent2); }
+  .gold { color: var(--gold); }
+
+  /* glow backdrop */
+  .glow { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  .glow::before {
+    content: ""; position: absolute; top: -20%; left: 50%; transform: translateX(-50%);
+    width: 900px; height: 700px; border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(124,58,237,0.28), transparent 70%);
+    filter: blur(20px);
+  }
+
+  /* nav */
+  nav {
+    position: sticky; top: 0; z-index: 50; backdrop-filter: blur(10px);
+    background: rgba(11,11,15,0.7); border-bottom: 1px solid var(--line);
+  }
+  nav .wrap { display: flex; align-items: center; gap: 20px; height: 64px; }
+  .logo { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 18px; letter-spacing: -0.3px; }
+  .logo .dot { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: grid; place-items: center; font-size: 15px; }
+  nav .links { margin-left: auto; display: flex; align-items: center; gap: 26px; font-size: 14px; color: var(--muted); }
+  nav .links a:hover { color: var(--text); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; border-radius: 11px; padding: 10px 17px;
+    font-weight: 600; font-size: 14px; cursor: pointer; border: 1px solid transparent; transition: .15s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #8b4ff0; transform: translateY(-1px); }
+  .btn-ghost { border-color: var(--line); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); }
+
+  section { position: relative; z-index: 1; }
+
+  /* hero */
+  .hero { padding: 76px 0 40px; }
+  .hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 48px; align-items: center; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--accent2);
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 13px; margin-bottom: 22px;
+    background: rgba(124,58,237,0.06);
+  }
+  h1 { font-size: clamp(40px, 6vw, 66px); line-height: 1.02; letter-spacing: -2px; margin: 0 0 20px; font-weight: 700; }
+  h1 em { font-style: normal; background: linear-gradient(120deg, var(--accent2), var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { font-size: 18.5px; color: var(--muted); max-width: 30em; margin: 0 0 28px; }
+  .lede b { color: var(--text); font-weight: 600; }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .cta-row .note { font-size: 13px; color: var(--muted); }
+
+  /* demo panel */
+  .demo-card {
+    border: 1px solid var(--line); border-radius: 20px; overflow: hidden;
+    background: var(--panel); box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(124,58,237,.08);
+  }
+  .demo-head { display: flex; align-items: center; gap: 9px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #13131b; }
+  .demo-head .lights { display: flex; gap: 6px; }
+  .demo-head .lights i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .demo-head .lights i:nth-child(1){ background:#ff5f57 } .demo-head .lights i:nth-child(2){ background:#febc2e } .demo-head .lights i:nth-child(3){ background:#28c840 }
+  .demo-head .url { margin-left: 8px; font-size: 12.5px; color: var(--muted); }
+  #demo { height: 540px; }
+  #demo iframe { border: 0 !important; }
+
+  /* marquee of authorities */
+  .marquee { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 16px 0; margin-top: 56px; overflow: hidden; }
+  .marquee .track { display: flex; gap: 40px; white-space: nowrap; animation: scroll 26s linear infinite; color: var(--muted); font-size: 14px; }
+  .marquee .track span { opacity: .7; }
+  @keyframes scroll { to { transform: translateX(-50%); } }
+
+  /* sections */
+  .band { padding: 84px 0; }
+  .kicker { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent2); margin-bottom: 14px; }
+  h2 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -1px; margin: 0 0 16px; font-weight: 700; }
+  .band p.sub { color: var(--muted); font-size: 17px; max-width: 38em; margin: 0 0 36px; }
+
+  .three { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; }
+  .feat { border: 1px solid var(--line); border-radius: 16px; padding: 24px; background: linear-gradient(180deg, var(--bg2), var(--bg)); }
+  .feat .ic { width: 42px; height: 42px; border-radius: 11px; background: rgba(124,58,237,.12); display: grid; place-items: center; font-size: 20px; margin-bottom: 16px; }
+  .feat h3 { margin: 0 0 8px; font-size: 18px; }
+  .feat p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  .quote { border-left: 3px solid var(--accent); padding: 6px 0 6px 22px; font-size: 20px; color: var(--text); }
+  .quote span { color: var(--muted); font-size: 14px; display: block; margin-top: 10px; }
+
+  .jail { text-align: center; max-width: 760px; margin: 0 auto; }
+  .jail .pill { display: inline-block; font-size: 12.5px; color: var(--ok); border: 1px solid rgba(52,211,153,.3); background: rgba(52,211,153,.07); border-radius: 999px; padding: 5px 13px; margin-bottom: 20px; }
+  .flow { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 28px; font-size: 13.5px; }
+  .flow .node { border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; background: var(--panel); }
+  .flow .node.eng { border-color: var(--accent); color: var(--accent2); }
+  .flow .arr { color: var(--muted); }
+
+  /* install */
+  .install { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  pre { margin: 0; background: #0d0d13; border: 1px solid var(--line); border-radius: 14px; padding: 20px; overflow-x: auto; font-size: 13.5px; line-height: 1.7; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  pre .tok-tag { color: #ff7b9c; } pre .tok-attr { color: var(--accent2); } pre .tok-str { color: var(--gold); } pre .tok-com { color: #5a5a6a; }
+  .steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+  .steps li { display: flex; gap: 14px; align-items: flex-start; }
+  .steps .n { flex: 0 0 28px; height: 28px; border-radius: 8px; background: rgba(124,58,237,.14); color: var(--accent2); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .steps b { display: block; margin-bottom: 2px; }
+  .steps p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  /* final cta */
+  .final { text-align: center; padding: 96px 0; }
+  .final .box { border: 1px solid var(--line); border-radius: 24px; padding: 56px 32px; background: radial-gradient(120% 140% at 50% 0%, rgba(124,58,237,.16), transparent 60%); }
+  .final h2 { margin-bottom: 14px; }
+
+  footer { border-top: 1px solid var(--line); padding: 36px 0; color: var(--muted); font-size: 13.5px; }
+  footer .wrap { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+  .mark b { color: var(--accent2); }
+
+  @media (max-width: 860px) {
+    .hero-grid, .split, .install { grid-template-columns: 1fr; }
+    .three { grid-template-columns: 1fr; }
+    nav .links a:not(.btn) { display: none; }
+    .hero { padding: 44px 0 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="/"><span class="dot">🪩</span> Bouncr</a>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#demo-section">Try it</a>
+      <a href="#install">Install</a>
+      <a class="btn btn-primary" href="#demo-section">Talk to the bouncer</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">● Negotiated pricing, as infrastructure</span>
+      <h1>Your paywall should <em>haggle.</em></h1>
+      <p class="lede">Bouncr is a drop-in AI negotiation agent that lets any subscription app offer personalized, haggled pricing — backed by a <b>deterministic policy engine</b> that guarantees you never sell below cost.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#demo-section">Try the bouncer →</a>
+        <a class="btn btn-ghost" href="#install">Drop it in, in 10 min</a>
+        <span class="note">no signup · haggle live below</span>
+      </div>
+    </div>
+    <div class="demo-card" id="demo-section">
+      <div class="demo-head">
+        <span class="lights"><i></i><i></i><i></i></span>
+        <span class="url">obius.app · membership</span>
+      </div>
+      <div id="demo"></div>
+    </div>
+  </div>
+
+  <div class="marquee">
+    <div class="track">
+      <span>“checked with the suits…”</span><span>“ran it by the math nerds…”</span><span>“talked to my boss…”</span><span>“the bean counters said no…”</span><span>“above my pay grade…”</span><span>“that's the floor, take it…”</span>
+      <span>“checked with the suits…”</span><span>“ran it by the math nerds…”</span><span>“talked to my boss…”</span><span>“the bean counters said no…”</span><span>“above my pay grade…”</span><span>“that's the floor, take it…”</span>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="why">
+  <div class="wrap split">
+    <div>
+      <div class="kicker">Flat pricing is broken</div>
+      <h2>Light users overpay. Heavy users bleed you dry.</h2>
+      <p class="sub">AI-era products have per-user costs that swing <b style="color:var(--text)">10–50×</b>. One power user can take an indie founder's bill from $127 to $890 a month, while light users quietly overpay and churn. A static pricing page captures <em>zero</em> information about what anyone would actually pay.</p>
+    </div>
+    <div>
+      <div class="quote">
+        Poke's “bouncer” negotiated each user's price at signup. People screenshotted their deals, bragged, and spent <b>days</b> at the paywall. It turned pricing into an acquisition moment.
+        <span>Nobody productized it. So we did.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="how" style="background:var(--bg2); border-top:1px solid var(--line); border-bottom:1px solid var(--line);">
+  <div class="wrap">
+    <div class="kicker">One product, three layers</div>
+    <h2>The bouncer out front. The math in the back.</h2>
+    <p class="sub">Stripe handles your payments. Orb meters your usage. Bouncr discovers what each user will actually pay — and closes the deal.</p>
+    <div class="three">
+      <div class="feat">
+        <div class="ic">💬</div>
+        <h3>Negotiation agent</h3>
+        <p>An embeddable chat that haggles in character — sassy, persistent, screenshot-worthy. It feels like texting a real bouncer at the door.</p>
+      </div>
+      <div class="feat">
+        <div class="ic">⚖️</div>
+        <h3>Policy engine</h3>
+        <p>Pure deterministic code sets every price. Cost floors, concession curves, reasoning tiers. The LLM never touches the number that gets charged.</p>
+      </div>
+      <div class="feat">
+        <div class="ic">📈</div>
+        <h3>WTP analytics</h3>
+        <p>Every offer, walk-away, and close — your true demand curve, often for the first time. The data exhaust no billing platform has.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap jail">
+    <span class="pill">✓ Architecturally jailbreak-proof</span>
+    <h2>Argue with it for days. You'll get charm, not a discount.</h2>
+    <p class="sub" style="margin-left:auto;margin-right:auto">The LLM and the numbers never touch. It converses and extracts your offer into structured data — a separate, deterministic engine decides accept / counter / hold / walk, and tells the bouncer only what it's allowed to say. A validator catches any number it tries to invent. The price can't be talked below the floor, because the floor lives in code, not a prompt.</p>
+    <div class="flow">
+      <span class="node">you</span><span class="arr">→</span>
+      <span class="node">extractor</span><span class="arr">→</span>
+      <span class="node eng">policy engine</span><span class="arr">→</span>
+      <span class="node">persona</span><span class="arr">→</span>
+      <span class="node">validator</span><span class="arr">→</span>
+      <span class="node">your price</span>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="install" style="background:var(--bg2); border-top:1px solid var(--line); border-bottom:1px solid var(--line);">
+  <div class="wrap install">
+    <div>
+      <div class="kicker">Drop-in</div>
+      <h2>One tag. Any stack.</h2>
+      <p class="sub">A script-tag loader drops a sandboxed widget onto your pricing page. Your server mints a session, the widget haggles inside your guardrails, and the closed deal hands off to Stripe.</p>
+      <ol class="steps">
+        <li><span class="n">1</span><div><b>Add the tag</b><p>One line on your pricing page — it mounts the bouncer in an iframe.</p></div></li>
+        <li><span class="n">2</span><div><b>Set your guardrails</b><p>List price, floor, target, concession curve, persona. The engine never breaches them.</p></div></li>
+        <li><span class="n">3</span><div><b>Settle into Stripe</b><p>Closed deals create a subscription at the negotiated price. You never touch money — or PCI.</p></div></li>
+      </ol>
+    </div>
+    <div>
+<pre><span class="tok-com">&lt;!-- on your pricing page --&gt;</span>
+<span class="tok-tag">&lt;script</span> <span class="tok-attr">src</span>=<span class="tok-str">"https://bouncr.tech/embed.js"</span>
+        <span class="tok-attr">data-plan</span>=<span class="tok-str">"pro_monthly"</span>
+        <span class="tok-attr">data-user</span>=<span class="tok-str">"user_123"</span>
+        <span class="tok-attr">data-mount</span>=<span class="tok-str">"#bouncr"</span><span class="tok-tag">&gt;&lt;/script&gt;</span>
+
+<span class="tok-com">// or wire it up yourself</span>
+<span class="tok-attr">Bouncr</span>.mount({
+  el: <span class="tok-str">"#bouncr"</span>,
+  planId: <span class="tok-str">"pro_monthly"</span>,
+  userRef: user.id,
+  onDeal: (d) =&gt; location = d.checkoutUrl,
+})</pre>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <div class="box">
+      <h2>Stop guessing what they'd pay.</h2>
+      <p class="sub" style="margin:0 auto 28px">Put a bouncer on your door. Watch your real demand curve draw itself.</p>
+      <div class="cta-row" style="justify-content:center">
+        <a class="btn btn-primary" href="#demo-section">Haggle with the demo</a>
+        <a class="btn btn-ghost" href="mailto:hello@thebouncr.com?subject=Bouncr%20access">Get early access</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span class="logo" style="font-size:15px"><span class="dot" style="width:22px;height:22px;font-size:12px">🪩</span> Bouncr</span>
+    <span class="mark">negotiated via <b>Bouncr</b> · thebouncr.com</span>
+  </div>
+</footer>
+
+<script src="/embed.js"></script>
+<script>
+  window.Bouncr && Bouncr.mount({
+    el: "#demo",
+    planId: "pro_monthly",
+    userRef: "lp_" + Math.random().toString(36).slice(2, 9),
+    theme: { accent: "7C3AED" },
+    fallbackUrl: "#install",
+    onDeal: function (d) {
+      var el = document.getElementById("demo");
+      // keep them on the page — the widget already shows the deal screen
+      try { window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 80, behavior: "smooth" }); } catch (e) {}
+    },
+  });
+</script>
+</body>
+</html>

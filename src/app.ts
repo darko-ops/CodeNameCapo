@@ -21,7 +21,7 @@ import { Hono, type Context, type Next } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { StripeGateway } from "./stripe/gateway.js";
 import { BouncrService, ServiceError } from "./service.js";
-import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML } from "./widget/assets.js";
+import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML } from "./widget/assets.js";
 
 export interface AppDeps {
   service: BouncrService;
@@ -218,7 +218,15 @@ export function buildApp(deps: AppDeps): Hono {
 
   // --- embeddable widget (Spec §10) ----------------------------------------
 
-  app.get("/", (c) => c.html(DEMO_HTML)); // public playground (Spec §15)
+  // thebouncr.com → marketing landing; bouncr.tech (and anything else) → the
+  // live playground. Same deployment, routed by Host header (Spec §15).
+  app.get("/", (c) => {
+    // Vercel may surface the request domain on x-forwarded-host rather than host.
+    const host = `${c.req.header("x-forwarded-host") ?? ""} ${c.req.header("host") ?? ""}`.toLowerCase();
+    return c.html(host.includes("thebouncr.com") ? LANDING_HTML : DEMO_HTML);
+  });
+  app.get("/landing", (c) => c.html(LANDING_HTML)); // always reachable for preview
+  app.get("/playground", (c) => c.html(DEMO_HTML)); // explicit demo path
   app.get("/widget", (c) => c.html(WIDGET_HTML));
   app.get("/dashboard", (c) => c.html(DASHBOARD_HTML)); // merchant dashboard (Spec §11)
   app.get("/embed.js", (c) => {
