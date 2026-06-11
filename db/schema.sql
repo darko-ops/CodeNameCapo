@@ -14,8 +14,11 @@ create table if not exists bouncr.merchants (
   id                 text primary key,
   name               text not null,
   stripe_connect_id  text,
+  api_key_hash       text,          -- SHA-256 of the dashboard API key
   created_at         bigint not null
 );
+-- Idempotent add for existing deployments (the column is new).
+alter table bouncr.merchants add column if not exists api_key_hash text;
 
 create table if not exists bouncr.plans (
   id            text primary key,

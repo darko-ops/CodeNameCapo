@@ -49,12 +49,18 @@
   <h1>Bouncr — WTP dashboard</h1>
   <p class="sub">Your true demand curve, from your own negotiations.</p>
 
-  <div class="bar">
+  <form class="bar" id="login" autocomplete="off">
+    <input id="key" type="password" autocomplete="current-password" placeholder="merchant API key (bk_…)" size="40" />
+    <button id="login-btn" type="submit">Log in</button>
+    <span id="login-status" class="meta"></span>
+  </form>
+
+  <div class="bar" id="authed" style="display:none">
     <input id="base" placeholder="API base" size="22" />
     <input id="plan" placeholder="plan_id" value="plan_demo" size="12" />
-    <input id="merchant" placeholder="merchant_id" value="merchant_demo" size="14" />
-    <input id="key" placeholder="x-api-key (if set)" size="18" />
     <button id="refresh">Refresh</button>
+    <span class="meta">signed in as <b id="who" style="color:var(--text)"></b></span>
+    <button class="ghost" id="logout">Log out</button>
     <span id="status"></span>
   </div>
 
@@ -96,20 +102,51 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   $("base").value = location.origin;
-  const KEY = "bouncr_dash";
-  try { Object.assign(state(), JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (_) {}
-  function state() { return { base: $("base"), plan: $("plan"), merchant: $("merchant"), key: $("key") }; }
-  ["base","plan","merchant","key"].forEach((id) => { const v = localStorage.getItem(KEY + "_" + id); if (v) $(id).value = v; });
-  function persist() { ["base","plan","merchant","key"].forEach((id) => localStorage.setItem(KEY + "_" + id, $(id).value)); }
+  const TKEY = "bouncr_dash_token";
+  let token = localStorage.getItem(TKEY) || null;
+  let MERCHANT = null; // id of the signed-in merchant (from the token)
+  ["base","plan"].forEach((id) => { const v = localStorage.getItem("bouncr_dash_" + id); if (v) $(id).value = v; });
+  function persist() { ["base","plan"].forEach((id) => localStorage.setItem("bouncr_dash_" + id, $(id).value)); }
 
-  const api = (path) => {
-    const h = {}; const k = $("key").value.trim(); if (k) h["x-api-key"] = k;
-    return fetch($("base").value.replace(/\/$/, "") + path, { headers: h });
-  };
-  const apiPost = (path, body) => {
-    const h = { "content-type": "application/json" }; const k = $("key").value.trim(); if (k) h["x-api-key"] = k;
-    return fetch($("base").value.replace(/\/$/, "") + path, { method: "POST", headers: h, body: JSON.stringify(body || {}) });
-  };
+  const authHeaders = () => (token ? { authorization: "Bearer " + token } : {});
+  const base = () => $("base").value.replace(/\/$/, "");
+  const api = (path) => fetch(base() + path, { headers: authHeaders() }).then(guard);
+  const apiPost = (path, body) =>
+    fetch(base() + path, { method: "POST", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) }).then(guard);
+  // A 401 anywhere means the session expired/invalid — drop back to login.
+  function guard(res) { if (res.status === 401) { logout(); throw new Error("session expired — log in again"); } return res; }
+
+  function showAuthed(name) {
+    MERCHANT = name && name.id ? name.id : MERCHANT;
+    $("who").textContent = (name && name.name) ? name.name : MERCHANT || "";
+    $("login").style.display = "none";
+    $("authed").style.display = "flex";
+  }
+  function logout() {
+    token = null; MERCHANT = null; localStorage.removeItem(TKEY);
+    $("authed").style.display = "none";
+    $("login").style.display = "flex";
+    $("key").value = "";
+  }
+
+  $("login").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const key = $("key").value.trim();
+    if (!key) return;
+    $("login-status").textContent = "signing in…";
+    try {
+      const r = await fetch(base() + "/v1/auth/login", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "login failed");
+      token = d.token; localStorage.setItem(TKEY, token);
+      $("login-status").textContent = "";
+      showAuthed(d.merchant);
+      load();
+    } catch (err) { $("login-status").innerHTML = '<span class="err">' + err.message + "</span>"; }
+  });
+  $("logout").onclick = logout;
 
   function card(label, value) { return `<div class="card"><h3>${label}</h3><div class="big">${value}</div></div>`; }
 
@@ -208,7 +245,7 @@
 
   async function renderConnect() {
     try {
-      const s = await (await api("/v1/merchants/" + encodeURIComponent($("merchant").value) + "/connect")).json();
+      const s = await (await api("/v1/merchants/" + encodeURIComponent(MERCHANT) + "/connect")).json();
       const b = $("connect-badge");
       if (s.connected && s.charges_enabled) { b.className = "badge ok"; b.textContent = "connected · ready"; $("connect-btn").style.display = "none"; }
       else if (s.connected) { b.className = "badge no"; b.textContent = "onboarding incomplete"; }
@@ -225,13 +262,24 @@
   }
 
   $("connect-btn").onclick = async () => {
-    const r = await (await apiPost("/v1/merchants/" + encodeURIComponent($("merchant").value) + "/connect/onboard", { return_url: location.href })).json();
+    const r = await (await apiPost("/v1/merchants/" + encodeURIComponent(MERCHANT) + "/connect/onboard", { return_url: location.href })).json();
     if (r.url) window.open(r.url, "_blank"); else alert(r.error || "could not start onboarding");
   };
 
   function escapeHtml(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
   $("refresh").onclick = load;
-  load();
+
+  // Boot: if we have a token, validate it (and learn the merchant) before showing
+  // the dashboard; otherwise show the login form.
+  (async () => {
+    if (!token) { logout(); return; }
+    try {
+      const r = await fetch(base() + "/v1/auth/me", { headers: authHeaders() });
+      if (!r.ok) { logout(); return; }
+      showAuthed((await r.json()).merchant);
+      load();
+    } catch (_) { logout(); }
+  })();
 })();
 </script>
 </body>

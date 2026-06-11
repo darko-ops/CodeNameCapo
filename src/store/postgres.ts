@@ -61,16 +61,33 @@ export class PostgresStore implements Store {
     const rows = await this.sql`select * from bouncr.merchants where id = ${id} limit 1`;
     const r = rows[0];
     if (!r) return null;
-    return { id: r.id, name: r.name, stripeConnectId: r.stripe_connect_id ?? null, createdAt: Number(r.created_at) };
+    return {
+      id: r.id,
+      name: r.name,
+      stripeConnectId: r.stripe_connect_id ?? null,
+      apiKeyHash: r.api_key_hash ?? null,
+      createdAt: Number(r.created_at),
+    };
   }
 
-  async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId">>): Promise<Merchant> {
+  async updateMerchant(
+    id: string,
+    patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>,
+  ): Promise<Merchant> {
     const rows = await this.sql`
-      update bouncr.merchants set stripe_connect_id = coalesce(${patch.stripeConnectId ?? null}, stripe_connect_id)
+      update bouncr.merchants set
+        stripe_connect_id = coalesce(${patch.stripeConnectId ?? null}, stripe_connect_id),
+        api_key_hash      = coalesce(${patch.apiKeyHash ?? null}, api_key_hash)
       where id = ${id} returning *`;
     if (!rows[0]) throw new Error(`merchant ${id} not found`);
     const r = rows[0];
-    return { id: r.id, name: r.name, stripeConnectId: r.stripe_connect_id ?? null, createdAt: Number(r.created_at) };
+    return {
+      id: r.id,
+      name: r.name,
+      stripeConnectId: r.stripe_connect_id ?? null,
+      apiKeyHash: r.api_key_hash ?? null,
+      createdAt: Number(r.created_at),
+    };
   }
 
   async getPlan(ref: string): Promise<Plan | null> {

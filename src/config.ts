@@ -5,7 +5,9 @@
  * day one). No keys → fake Stripe + template negotiator + in-memory store, so the
  * whole API runs offline. The Postgres store is selected by DATABASE_URL.
  */
+import { randomBytes } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
+import { generateMerchantKey, hashKey } from "./auth.js";
 import type { Plan, Merchant, Store } from "./store/types.js";
 import { MemoryStore } from "./store/memory.js";
 import { PostgresStore } from "./store/postgres.js";
@@ -19,7 +21,7 @@ import { BouncrService } from "./service.js";
 
 /** The demo merchant Bouncr ships with (Connect not yet onboarded). */
 export function demoMerchant(): Merchant {
-  return { id: "merchant_demo", name: "Obius", stripeConnectId: null, createdAt: 0 };
+  return { id: "merchant_demo", name: "Obius", stripeConnectId: null, apiKeyHash: null, createdAt: 0 };
 }
 
 /** The demo plan Bouncr ships with — the CLI/dogfood "pro_monthly" tier. */
@@ -67,18 +69,35 @@ export interface BuiltService {
   sandbox: { stripe: boolean; negotiator: boolean };
   store: "postgres" | "memory";
   apiKey: string | null;
+  /** HMAC secret for signing dashboard session tokens. */
+  authSecret: string;
 }
 
 /** Build the service from environment variables, falling back to sandbox parts. */
 export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): BuiltService {
   const plan = demoPlan();
 
+  // Dashboard-token signing secret. A stable env value keeps sessions valid
+  // across restarts/instances; without it, tokens die on redeploy (dev only).
+  const authSecret = env.BOUNCR_AUTH_SECRET ?? randomBytes(32).toString("hex");
+  if (!env.BOUNCR_AUTH_SECRET) {
+    console.warn("[auth] BOUNCR_AUTH_SECRET unset — dashboard sessions won't survive a restart");
+  }
+
+  // Seed the in-memory demo merchant with a dashboard key so the demo dashboard
+  // is loginable. A stable key comes from BOUNCR_DEMO_MERCHANT_KEY; otherwise we
+  // mint one and log it (dev convenience). Postgres deployments seed keys via SQL.
+  const demoM = demoMerchant();
+  const demoKey = env.BOUNCR_DEMO_MERCHANT_KEY ?? generateMerchantKey(demoM.id);
+  demoM.apiKeyHash = hashKey(demoKey);
+  if (!env.BOUNCR_DEMO_MERCHANT_KEY) console.log(`[auth] demo merchant dashboard key: ${demoKey}`);
+
   // Postgres when DATABASE_URL is set (apply db/schema.sql + db/seed.sql first),
   // else the in-memory store seeded with the demo merchant/plan.
   const usePostgres = Boolean(env.DATABASE_URL);
   const store: Store = usePostgres
     ? new PostgresStore(env.DATABASE_URL!)
-    : new MemoryStore([plan], [demoMerchant()]);
+    : new MemoryStore([plan], [demoM]);
 
   // Lint the seed config at boot (Spec §12) — warn loudly on misconfig.
   const lint = lintConfig(plan.config, plan.policy);
@@ -120,5 +139,6 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
     sandbox: { stripe: stripeSandbox, negotiator: negotiatorSandbox },
     store: usePostgres ? "postgres" : "memory",
     apiKey: env.BOUNCR_API_KEY ?? null,
+    authSecret,
   };
 }

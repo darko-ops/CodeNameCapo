@@ -21,6 +21,8 @@ export interface Merchant {
   name: string;
   /** Connected Stripe account id (acct_...), or null until onboarding completes. */
   stripeConnectId: string | null;
+  /** SHA-256 of the merchant's dashboard API key, or null if none provisioned. */
+  apiKeyHash: string | null;
   createdAt: number;
 }
 
@@ -167,7 +169,7 @@ export type NewUsageCycle = Omit<UsageCycle, "id" | "createdAt">;
 
 export interface Store {
   getMerchant(id: string): Promise<Merchant | null>;
-  updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId">>): Promise<Merchant>;
+  updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>): Promise<Merchant>;
 
   getPlan(planId: string): Promise<Plan | null>;
 

@@ -22,14 +22,20 @@ import { streamSSE } from "hono/streaming";
 import type { StripeGateway } from "./stripe/gateway.js";
 import { BouncrService, ServiceError } from "./service.js";
 import { RateLimiter, type RateRule } from "./ratelimit.js";
+import { signSession, verifySession } from "./auth.js";
 import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML } from "./widget/assets.js";
 
 export interface AppDeps {
   service: BouncrService;
   stripe: StripeGateway;
-  /** When set, merchant routes (create, deals) require this in `x-api-key`. */
+  /** When set, server routes (session create, deals, usage) require this in `x-api-key`. */
   apiKey: string | null;
+  /** HMAC secret for signing dashboard session tokens. */
+  authSecret: string;
 }
+
+/** Dashboard session lifetime. */
+const DASHBOARD_TTL_MS = 12 * 60 * 60 * 1000;
 
 const STATUS: Record<ServiceError["code"], 400 | 401 | 404 | 409> = {
   bad_request: 400,
@@ -56,14 +62,46 @@ const THROTTLE_LINES = [
   "one message at a time champ, im not a vending machine",
 ];
 
-export function buildApp(deps: AppDeps): Hono {
-  const app = new Hono();
+export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string } }> {
+  const app = new Hono<{ Variables: { merchantId: string } }>();
   const { service, stripe } = deps;
   const limiter = new RateLimiter();
   let throttleIdx = 0;
   const throttleReply = () => THROTTLE_LINES[throttleIdx++ % THROTTLE_LINES.length]!;
 
   app.get("/healthz", (c) => c.json({ ok: true }));
+
+  // --- merchant dashboard auth (Spec §9) -----------------------------------
+  // Each merchant has an API key; login exchanges it for a short-lived signed
+  // token (stateless HMAC — no session store, works across serverless instances).
+  // Dashboard reads are gated by this token AND scoped to the token's merchant.
+  app.post("/v1/auth/login", async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 10 }])) {
+      return c.json({ error: "too many attempts, try again shortly", code: "unauthorized" }, 429);
+    }
+    const key = str((await safeJson(c)).key);
+    try {
+      const merchant = await service.authenticateMerchantKey(key ?? undefined);
+      const { token, expiresAt } = signSession(merchant.id, deps.authSecret, DASHBOARD_TTL_MS, Date.now());
+      return c.json({ token, expires_at: expiresAt, merchant: { id: merchant.id, name: merchant.name } });
+    } catch {
+      return c.json({ error: "invalid credentials", code: "unauthorized" }, 401);
+    }
+  });
+
+  const dashboardAuth = async (c: Context<{ Variables: { merchantId: string } }>, next: Next) => {
+    const token = bearer(c.req.header("authorization")) ?? c.req.header("x-dashboard-token");
+    const v = token ? verifySession(token, deps.authSecret, Date.now()) : null;
+    if (!v) return c.json({ error: "login required", code: "unauthorized" }, 401);
+    c.set("merchantId", v.merchantId);
+    await next();
+  };
+
+  app.get("/v1/auth/me", dashboardAuth, async (c) => {
+    const info = await service.getMerchantInfo(c.get("merchantId"));
+    if (!info) return c.json({ error: "merchant not found", code: "not_found" }, 404);
+    return c.json({ merchant: info });
+  });
 
   // --- merchant routes (API key) -------------------------------------------
 
@@ -109,14 +147,17 @@ export function buildApp(deps: AppDeps): Hono {
     });
   });
 
-  // WTP analytics + dashboard reads (Spec §11) — merchant key.
-  app.get("/v1/analytics/wtp", merchantKey, async (c) => {
+  // WTP analytics + dashboard reads (Spec §11) — merchant dashboard token,
+  // scoped: a merchant only ever sees its OWN plans/sessions.
+  app.get("/v1/analytics/wtp", dashboardAuth, async (c) => {
     const planId = c.req.query("plan_id");
     if (!planId) return c.json({ error: "plan_id query param is required" }, 400);
+    await service.requireOwnedPlan(planId, c.get("merchantId"));
     return c.json(await service.getAnalytics(planId));
   });
 
-  app.get("/v1/plans/:id/sessions", merchantKey, async (c) => {
+  app.get("/v1/plans/:id/sessions", dashboardAuth, async (c) => {
+    await service.requireOwnedPlan(c.req.param("id")!, c.get("merchantId"));
     const sessions = await service.listSessions(c.req.param("id")!);
     return c.json({
       sessions: sessions.map((s) => ({
@@ -130,9 +171,13 @@ export function buildApp(deps: AppDeps): Hono {
     });
   });
 
-  app.get("/v1/plans/:id/lint", merchantKey, async (c) => c.json(await service.lintPlan(c.req.param("id")!)));
+  app.get("/v1/plans/:id/lint", dashboardAuth, async (c) => {
+    await service.requireOwnedPlan(c.req.param("id")!, c.get("merchantId"));
+    return c.json(await service.lintPlan(c.req.param("id")!));
+  });
 
-  app.get("/v1/sessions/:id/transcript", merchantKey, async (c) => {
+  app.get("/v1/sessions/:id/transcript", dashboardAuth, async (c) => {
+    await service.requireOwnedSession(c.req.param("id")!, c.get("merchantId"));
     const { session, turns } = await service.getTranscript(c.req.param("id")!);
     return c.json({
       session: { id: session.id, status: session.status, round: session.round, end_user_ref: session.endUserRef },
@@ -172,17 +217,19 @@ export function buildApp(deps: AppDeps): Hono {
     return c.json({ session_id: r.sessionId, session_token: r.sessionToken, opener: r.opener, summary: r.summary });
   });
 
-  // Stripe Connect onboarding (Spec §7, Phase 3) — merchant key.
-  app.post("/v1/merchants/:id/connect/onboard", merchantKey, async (c) => {
+  // Stripe Connect (Spec §7) — dashboard token, scoped to the merchant's OWN id.
+  app.post("/v1/merchants/:id/connect/onboard", dashboardAuth, async (c) => {
+    if (c.req.param("id") !== c.get("merchantId")) return c.json({ error: "not found", code: "not_found" }, 404);
     const body = await safeJson(c);
     const returnUrl = str(body.return_url) ?? `${baseFromReq(c)}/dashboard`;
     const refreshUrl = str(body.refresh_url) ?? returnUrl;
-    const r = await service.startConnectOnboarding(c.req.param("id")!, returnUrl, refreshUrl);
+    const r = await service.startConnectOnboarding(c.get("merchantId"), returnUrl, refreshUrl);
     return c.json({ url: r.url, account_id: r.accountId });
   });
 
-  app.get("/v1/merchants/:id/connect", merchantKey, async (c) => {
-    const s = await service.getConnectStatus(c.req.param("id")!);
+  app.get("/v1/merchants/:id/connect", dashboardAuth, async (c) => {
+    if (c.req.param("id") !== c.get("merchantId")) return c.json({ error: "not found", code: "not_found" }, 404);
+    const s = await service.getConnectStatus(c.get("merchantId"));
     return c.json({ connected: s.connected, account_id: s.accountId, charges_enabled: s.chargesEnabled });
   });
 

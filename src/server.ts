@@ -11,7 +11,7 @@ import { buildServiceFromEnv } from "./config.js";
 import { buildApp } from "./app.js";
 
 const built = buildServiceFromEnv();
-const app = buildApp({ service: built.service, stripe: built.stripe, apiKey: built.apiKey });
+const app = buildApp({ service: built.service, stripe: built.stripe, apiKey: built.apiKey, authSecret: built.authSecret });
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (info) => {

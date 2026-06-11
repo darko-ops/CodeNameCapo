@@ -11,7 +11,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { openSession, type Action, type SessionState } from "./engine.js";
-import type { Store, Plan, SessionRecord, TurnRecord, DealRecord } from "./store/types.js";
+import type { Store, Plan, Merchant, SessionRecord, TurnRecord, DealRecord } from "./store/types.js";
+import { parseMerchantKey, hashKey, safeEqualHex, generateMerchantKey } from "./auth.js";
 import type { StripeGateway } from "./stripe/gateway.js";
 import type { WebhookEvent } from "./stripe/gateway.js";
 import type { Negotiator } from "./llm/negotiator.js";
@@ -168,6 +169,53 @@ export class BouncrService {
       throw new ServiceError("bad_request", "a valid email is required");
     }
     await this.store.appendEvent("waitlist.signup", { email: e, source: source ?? null, at: this.now() });
+  }
+
+  // --- Merchant auth (dashboard) -------------------------------------------
+
+  /**
+   * Validate a merchant API key against the stored hash. Returns the merchant on
+   * success; throws unauthorized otherwise. The same opaque error for "no such
+   * merchant" and "wrong secret" avoids leaking which merchant ids exist.
+   */
+  async authenticateMerchantKey(key: string | undefined): Promise<Merchant> {
+    const parsed = key ? parseMerchantKey(key) : null;
+    const merchant = parsed ? await this.store.getMerchant(parsed.merchantId) : null;
+    if (!merchant || !merchant.apiKeyHash || !safeEqualHex(hashKey(key!), merchant.apiKeyHash)) {
+      throw new ServiceError("unauthorized", "invalid credentials");
+    }
+    return merchant;
+  }
+
+  /** Public merchant info for a logged-in dashboard (id + name). */
+  async getMerchantInfo(merchantId: string): Promise<{ id: string; name: string } | null> {
+    const m = await this.store.getMerchant(merchantId);
+    return m ? { id: m.id, name: m.name } : null;
+  }
+
+  /** Mint (or rotate) a merchant's API key; stores only the hash, returns the
+   *  plaintext once. */
+  async provisionMerchantKey(merchantId: string): Promise<string> {
+    const key = generateMerchantKey(merchantId);
+    await this.store.updateMerchant(merchantId, { apiKeyHash: hashKey(key) });
+    return key;
+  }
+
+  /** Load a plan, but only if it belongs to `merchantId`. 404 (not 403) on a
+   *  mismatch so a merchant can't probe for other merchants' plan ids. */
+  async requireOwnedPlan(planId: string, merchantId: string): Promise<Plan> {
+    const plan = await this.store.getPlan(planId);
+    if (!plan || plan.merchantId !== merchantId) throw new ServiceError("not_found", `plan ${planId} not found`);
+    return plan;
+  }
+
+  /** Assert a session belongs to `merchantId` (via its plan). */
+  async requireOwnedSession(sessionId: string, merchantId: string): Promise<void> {
+    const session = await this.store.getSession(sessionId);
+    const plan = session ? await this.store.getPlan(session.planId) : null;
+    if (!session || !plan || plan.merchantId !== merchantId) {
+      throw new ServiceError("not_found", `session ${sessionId} not found`);
+    }
   }
 
   /** Verify a widget session token. Throws unauthorized on mismatch (Spec §9, §12). */

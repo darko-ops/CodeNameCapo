@@ -5,11 +5,17 @@ import { MemoryStore } from "./store/memory.js";
 import { FakeStripeGateway } from "./stripe/fake.js";
 import { makeTemplateNegotiator } from "./llm/negotiator.js";
 import { demoPlan, demoMerchant } from "./config.js";
+import { generateMerchantKey, hashKey } from "./auth.js";
 
 const PLAN = demoPlan();
+const AUTH_SECRET = "test_auth_secret";
 
 function makeApp(apiKey: string | null = null) {
-  const store = new MemoryStore([PLAN], [demoMerchant()]);
+  // Seed the demo merchant with a known dashboard key so login works in tests.
+  const merchant = demoMerchant();
+  const merchantKey = generateMerchantKey(merchant.id);
+  merchant.apiKeyHash = hashKey(merchantKey);
+  const store = new MemoryStore([PLAN], [merchant]);
   const stripe = new FakeStripeGateway();
   const service = new BouncrService({
     store,
@@ -17,7 +23,14 @@ function makeApp(apiKey: string | null = null) {
     negotiator: makeTemplateNegotiator(),
     baseUrl: "http://localhost:8787",
   });
-  return { app: buildApp({ service, stripe, apiKey }), store, stripe };
+  return { app: buildApp({ service, stripe, apiKey, authSecret: AUTH_SECRET }), store, stripe, merchantKey };
+}
+
+/** Log in as the demo merchant and return a Bearer auth header. */
+async function login(app: any, key: string): Promise<Record<string, string>> {
+  const r = await post(app, "/v1/auth/login", { key });
+  const b = await r.json();
+  return { authorization: "Bearer " + b.token };
 }
 
 const post = (app: any, path: string, body?: unknown, headers: Record<string, string> = {}) =>
@@ -234,9 +247,69 @@ describe("landing page host routing (thebouncr.com)", () => {
   });
 });
 
+describe("merchant dashboard auth (Spec §9)", () => {
+  it("logs in with a valid key, rejects a bad one, and gates reads on the token", async () => {
+    const { app, merchantKey } = makeApp();
+
+    // wrong key → 401
+    expect((await post(app, "/v1/auth/login", { key: "bk_merchant_demo_" + "0".repeat(48) })).status).toBe(401);
+    expect((await post(app, "/v1/auth/login", { key: "garbage" })).status).toBe(401);
+
+    // right key → token + merchant
+    const ok = await post(app, "/v1/auth/login", { key: merchantKey });
+    expect(ok.status).toBe(200);
+    const body = await ok.json();
+    expect(body.token).toBeTruthy();
+    expect(body.merchant).toMatchObject({ id: "merchant_demo", name: "Obius" });
+
+    const auth = { authorization: "Bearer " + body.token };
+    expect((await app.request("/v1/auth/me", { headers: auth })).status).toBe(200);
+
+    // reads require the token
+    expect((await app.request(`/v1/plans/${PLAN.id}/sessions`)).status).toBe(401);
+    expect((await app.request(`/v1/plans/${PLAN.id}/sessions`, { headers: auth })).status).toBe(200);
+
+    // a tampered/garbage token is rejected
+    expect((await app.request("/v1/auth/me", { headers: { authorization: "Bearer not.a.token" } })).status).toBe(401);
+  });
+
+  it("scopes data to the token's merchant — no cross-merchant reads", async () => {
+    // Two merchants, each with their own plan, sharing one app/store.
+    const planA = { ...demoPlan(), id: "plan_a", planKey: "a", merchantId: "m_a" };
+    const planB = { ...demoPlan(), id: "plan_b", planKey: "b", merchantId: "m_b" };
+    const mkMerchant = (id: string) => {
+      const m = demoMerchant();
+      (m as any).id = id;
+      const key = generateMerchantKey(id);
+      m.apiKeyHash = hashKey(key);
+      return { m, key };
+    };
+    const a = mkMerchant("m_a");
+    const b = mkMerchant("m_b");
+    const store = new MemoryStore([planA, planB], [a.m, b.m]);
+    const app = buildApp({
+      service: new BouncrService({ store, stripe: new FakeStripeGateway(), negotiator: makeTemplateNegotiator(), baseUrl: "http://x" }),
+      stripe: new FakeStripeGateway(),
+      apiKey: null,
+      authSecret: AUTH_SECRET,
+    });
+
+    const authA = await login(app, a.key);
+    // A can read its own plan…
+    expect((await app.request("/v1/plans/plan_a/sessions", { headers: authA })).status).toBe(200);
+    // …but NOT merchant B's plan (404, not 403 — don't confirm it exists).
+    expect((await app.request("/v1/plans/plan_b/sessions", { headers: authA })).status).toBe(404);
+    expect((await app.request("/v1/analytics/wtp?plan_id=plan_b", { headers: authA })).status).toBe(404);
+    // …and not B's Connect account.
+    expect((await app.request("/v1/merchants/m_b/connect", { headers: authA })).status).toBe(404);
+  });
+});
+
 describe("dashboard + analytics + Connect endpoints (Spec §7, §11, §12)", () => {
   it("serves analytics, lint, transcript, connect, and the dashboard page", async () => {
-    const { app } = makeApp();
+    const { app, merchantKey } = makeApp();
+    const auth = await login(app, merchantKey); // dashboard reads require a logged-in merchant
+    const get = (path: string) => app.request(path, { headers: auth });
     // one full negotiation so analytics has data
     const s = await startSession(app);
     const r1 = await post(app, `/v1/sessions/${s.id}/messages`, { message: "$3" }, tok(s.token));
@@ -244,26 +317,29 @@ describe("dashboard + analytics + Connect endpoints (Spec §7, §11, §12)", () 
     const close = await post(app, `/v1/sessions/${s.id}/messages`, { message: `ok ${ask}` }, tok(s.token));
     expect((await close.json()).action.type).toBe("accept");
 
-    const an = await (await app.request(`/v1/analytics/wtp?plan_id=${PLAN.id}`)).json();
+    const an = await (await get(`/v1/analytics/wtp?plan_id=${PLAN.id}`)).json();
     expect(an.funnel.sessions).toBe(1);
     expect(an.offers.closingPrices).toEqual([ask]);
 
-    const lint = await (await app.request(`/v1/plans/${PLAN.id}/lint`)).json();
+    const lint = await (await get(`/v1/plans/${PLAN.id}/lint`)).json();
     expect(lint.ok).toBe(true);
 
-    const list = await (await app.request(`/v1/plans/${PLAN.id}/sessions`)).json();
+    const list = await (await get(`/v1/plans/${PLAN.id}/sessions`)).json();
     expect(list.sessions.length).toBe(1);
 
-    const tr = await (await app.request(`/v1/sessions/${s.id}/transcript`)).json();
+    const tr = await (await get(`/v1/sessions/${s.id}/transcript`)).json();
     expect(tr.turns.length).toBeGreaterThan(0);
     expect(tr.turns.some((t: any) => t.role === "user")).toBe(true);
 
-    const conn = await (await app.request(`/v1/merchants/merchant_demo/connect`)).json();
+    const conn = await (await get(`/v1/merchants/merchant_demo/connect`)).json();
     expect(conn.connected).toBe(false);
-    const onboard = await post(app, "/v1/merchants/merchant_demo/connect/onboard", { return_url: "http://x" });
+    const onboard = await post(app, "/v1/merchants/merchant_demo/connect/onboard", { return_url: "http://x" }, auth);
     expect((await onboard.json()).url).toContain("/connect/onboard/");
     // after onboarding the merchant is connected
-    expect((await (await app.request(`/v1/merchants/merchant_demo/connect`)).json()).connected).toBe(true);
+    expect((await (await get(`/v1/merchants/merchant_demo/connect`)).json()).connected).toBe(true);
+
+    // unauthenticated dashboard reads are rejected
+    expect((await app.request(`/v1/analytics/wtp?plan_id=${PLAN.id}`)).status).toBe(401);
 
     expect((await app.request("/dashboard")).status).toBe(200);
   });
@@ -274,7 +350,7 @@ describe("dashboard + analytics + Connect endpoints (Spec §7, §11, §12)", () 
     // demo merchant needed for closeDeal lookups, but no deal here
     const stripe = new FakeStripeGateway();
     const service = new BouncrService({ store, stripe, negotiator: makeTemplateNegotiator(), baseUrl: "http://x" });
-    const app = buildApp({ service, stripe, apiKey: null });
+    const app = buildApp({ service, stripe, apiKey: null, authSecret: AUTH_SECRET });
 
     const s = await startSession(app);
     await post(app, `/v1/sessions/${s.id}/messages`, { message: "$1" }, tok(s.token));

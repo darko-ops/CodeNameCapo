@@ -48,7 +48,7 @@ export class MemoryStore implements Store {
     return m ? clone(m) : null;
   }
 
-  async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId">>): Promise<Merchant> {
+  async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash">>): Promise<Merchant> {
     const m = this.merchants.get(id);
     if (!m) throw new Error(`merchant ${id} not found`);
     Object.assign(m, patch);
