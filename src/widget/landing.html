@@ -64,11 +64,13 @@
   .btn {
     display: inline-flex; align-items: center; gap: 8px; border-radius: 11px; padding: 10px 17px;
     font-weight: 600; font-size: 14px; cursor: pointer; border: 1px solid transparent; transition: .15s;
+    background: transparent; /* <button> elements default to a light UA fill — kill it */
+    font-family: inherit;
   }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-primary:hover { background: #8b4ff0; transform: translateY(-1px); }
-  .btn-ghost { border-color: var(--line); color: var(--text); }
-  .btn-ghost:hover { border-color: var(--accent); }
+  .btn-ghost { background: transparent; border-color: var(--line); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); color: #fff; background: rgba(124,58,237,.12); }
 
   section { position: relative; z-index: 1; }
 
