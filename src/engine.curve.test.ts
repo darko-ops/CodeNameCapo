@@ -9,13 +9,17 @@
 import { describe, it, expect } from "vitest";
 import {
   type Config,
+  type SessionState,
   roomFactor,
-  appliedDrop,
-  bandFor,
+  pullToward,
+  isInsultingOffer,
+  decide,
+  applyAction,
+  openSession,
   CURVE,
-  MIN_BAND,
-  MAX_BAND,
-  SPECIAL_SITUATION_BONUS,
+  PULL_WEIGHT_BY_TIER,
+  MAX_PULL_FRACTION,
+  LOWBALL_THRESHOLD,
 } from "./engine.js";
 
 const CFG: Config = {
@@ -85,48 +89,91 @@ describe("roomFactor — robustness", () => {
   });
 });
 
-describe("appliedDrop = base_band × list × room_factor", () => {
-  it("scales the give with room: same move drops more near list than at target than near floor", () => {
-    const t = "strong" as const;
-    const nearList = appliedDrop(CFG.listPrice - 0.5, t, CFG);
-    const atTarget = appliedDrop(CFG.targetPrice, t, CFG);
-    const nearFloor = appliedDrop(CFG.floorPrice + 0.5, t, CFG);
-    expect(nearList).toBeGreaterThan(atTarget);
-    expect(atTarget).toBeGreaterThan(nearFloor);
-    expect(nearFloor).toBeGreaterThan(0); // a nudge, never nothing (room_floor_min)
+describe("pullToward — gap-anchored, room_factor as the scaler", () => {
+  it("pulls a fraction of the gap toward the buyer; bigger move → closer to the offer", () => {
+    const cur = 30, offer = 20;
+    const none = pullToward(cur, offer, PULL_WEIGHT_BY_TIER.none, CFG, CFG.floorPrice);
+    const strong = pullToward(cur, offer, PULL_WEIGHT_BY_TIER.strong, CFG, CFG.floorPrice);
+    expect(none).toBeLessThan(cur); // it moved
+    expect(strong).toBeLessThan(none); // a stronger pull lands closer to the buyer
+    expect(strong).toBeGreaterThan(offer); // but never below the offer (pull < 1)
   });
 
-  it("a bigger base_band gives a bigger drop at the same price", () => {
-    const at = CFG.listPrice - 0.5;
-    expect(appliedDrop(at, "strong", CFG)).toBeGreaterThan(appliedDrop(at, "weak", CFG));
-    expect(appliedDrop(at, "weak", CFG)).toBeGreaterThan(appliedDrop(at, "none", CFG));
+  it("room_factor still paces it: the SAME move pulls a bigger fraction near list than near floor", () => {
+    const w = PULL_WEIGHT_BY_TIER.strong;
+    // hold the gap ratio fixed (offer = 60% of current) so only room_factor varies
+    const nearList = (CFG.listPrice - 0.5) - pullToward(CFG.listPrice - 0.5, (CFG.listPrice - 0.5) * 0.6, w, CFG, CFG.floorPrice);
+    const nearFloor = (CFG.floorPrice + 2) - pullToward(CFG.floorPrice + 2, (CFG.floorPrice + 2) * 0.6, w, CFG, CFG.floorPrice);
+    expect(nearList).toBeGreaterThan(nearFloor); // wider room → bigger leap
+    expect(nearFloor).toBeGreaterThanOrEqual(0);
   });
 
-  it("the special bonus on a low-tier deal-maker drops much more than that tier ordinarily", () => {
-    const at = CFG.listPrice - 0.5;
-    // e.g. a bare credible walk-away extracts weak, but special lifts it big.
-    expect(appliedDrop(at, "weak", CFG, { special: true })).toBeGreaterThan(
-      appliedDrop(at, "weak", CFG) * 2,
-    );
+  it("never moves more than MAX_PULL_FRACTION of the gap in one round (no capitulation)", () => {
+    const cur = 48, offer = 10; // huge gap, strongest possible pull
+    const next = pullToward(cur, offer, 5 /* absurdly high weight */, CFG, CFG.floorPrice);
+    const movedFraction = (cur - next) / (cur - offer);
+    expect(movedFraction).toBeLessThanOrEqual(MAX_PULL_FRACTION + 1e-9);
+  });
+
+  it("never lands below the bound (floor) nor below the buyer's offer", () => {
+    expect(pullToward(30, 9, 5, CFG, CFG.floorPrice)).toBeGreaterThanOrEqual(CFG.floorPrice);
+    expect(pullToward(30, 25, PULL_WEIGHT_BY_TIER.strong, CFG, CFG.floorPrice)).toBeGreaterThan(25);
+    expect(pullToward(30, 35, PULL_WEIGHT_BY_TIER.strong, CFG, CFG.floorPrice)).toBe(30); // offer above ask → no move
   });
 });
 
-describe("give-band scale: wide variance, 2% min, 13% max", () => {
-  it("bands span MIN_BAND (2%) → MAX_BAND (13%), strictly increasing by tier (variance)", () => {
-    expect(bandFor("none")).toBe(MIN_BAND);
-    expect(MIN_BAND).toBeCloseTo(0.02, 9);
-    expect(bandFor("strong")).toBe(MAX_BAND);
-    expect(MAX_BAND).toBeCloseTo(0.13, 9);
-    // a flat lowball and a big-audience offer must NOT feel the same — strict spread
-    expect(bandFor("weak")).toBeGreaterThan(bandFor("none"));
-    expect(bandFor("moderate")).toBeGreaterThan(bandFor("weak"));
-    expect(bandFor("strong")).toBeGreaterThan(bandFor("moderate"));
+describe("insulting-anchor guard", () => {
+  it("flags offers below floor or below LOWBALL_THRESHOLD × ask as insults", () => {
+    expect(LOWBALL_THRESHOLD).toBeCloseTo(0.3, 9);
+    expect(isInsultingOffer(5, 30, CFG)).toBe(true); // below floor (8) and << 0.3×30
+    expect(isInsultingOffer(8, 30, CFG)).toBe(true); // 8 < 0.3×30 = 9
+    expect(isInsultingOffer(20, 30, CFG)).toBe(false); // credible
   });
 
-  it("the special bonus (+10%) lifts a low tier toward the ceiling, clamped at MAX_BAND", () => {
-    expect(SPECIAL_SITUATION_BONUS).toBeCloseTo(0.1, 9);
-    expect(bandFor("weak", true)).toBeGreaterThan(bandFor("weak", false)); // +10pp lift
-    expect(bandFor("weak", true)).toBeLessThanOrEqual(MAX_BAND + 1e-9); // never past the ceiling
-    expect(bandFor("strong", true)).toBeCloseTo(MAX_BAND, 9); // already at the cap
+  it("decide() REFUSES an insult (holds, no give) and does not chase it", () => {
+    const s = openSession(CFG, 0); // ask 48
+    const refused = decide(s, 5, CFG, 0, { reasoning: "strong" });
+    expect(refused).toEqual({ type: "hold", amount: 48 }); // near-zero give, not a move toward $5
+  });
+
+  it("repeated insults stay refused — never softer", () => {
+    let s = openSession(CFG, 0);
+    for (let i = 0; i < 6; i++) {
+      const a = decide(s, 3, CFG, 0, { reasoning: "strong" }); // relentless $3 insult
+      expect(a.type).toBe("hold");
+      expect(a.type === "hold" ? a.amount : 0).toBe(s.currentAsk); // price never drops for an insult
+      s = applyAction(s, 3, a);
+    }
+  });
+});
+
+describe("responsiveness: the buyer's number matters", () => {
+  it("a higher credible offer is met CLOSER than a lower one (same move, same room)", () => {
+    const s: SessionState = { round: 0, currentAsk: 30, openedAt: 0, history: [] };
+    const high = decide(s, 27, CFG, 0, { reasoning: "moderate" }); // 27 below acceptThreshold (0.97×30=29.1)
+    const low = decide(s, 15, CFG, 0, { reasoning: "moderate" });
+    const ch = high.type === "counter" ? high.amount : NaN;
+    const cl = low.type === "counter" ? low.amount : NaN;
+    expect(ch).not.toBe(cl); // DIFFERENT counters — the buyer's number matters (the core fix)
+    expect(ch).toBeGreaterThan(cl); // the counter tracks the offer: higher offer → higher counter
+    expect(Math.abs(ch - 27)).toBeLessThan(Math.abs(cl - 15)); // higher offer met proportionally closer
+    expect(ch).toBeGreaterThan(27); // each counter still sits above its own offer
+    expect(cl).toBeGreaterThan(15);
+  });
+});
+
+describe("exposure is priced as a token (split tone from price)", () => {
+  it("an exposure move never moves price below an identical non-reach (none) haggle", () => {
+    const s: SessionState = { round: 0, currentAsk: 30, openedAt: 0, history: [] };
+    const offer = 20;
+    // big-reach exposure graded strong for TONE, but priced as none via exposure flag
+    const exposed = decide(s, offer, CFG, 0, { reasoning: "strong", exposure: true });
+    const plainNone = decide(s, offer, CFG, 0, { reasoning: "none" });
+    const ce = exposed.type === "counter" ? exposed.amount : NaN;
+    const cn = plainNone.type === "counter" ? plainNone.amount : NaN;
+    expect(ce).toBeCloseTo(cn, 6); // exposure pulls no harder than a bare none move
+    // ...and far less than a real strong move would (which is NOT exposure)
+    const realStrong = decide(s, offer, CFG, 0, { reasoning: "strong" });
+    expect(ce).toBeGreaterThan(realStrong.type === "counter" ? realStrong.amount : 0);
   });
 });

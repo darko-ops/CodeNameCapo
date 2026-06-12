@@ -100,12 +100,14 @@ describe("renegotiation settlement (Spec §6.2, §7)", () => {
     for (let i = 1; i <= 3; i++) await service.reportUsage(dealId, i, 5000);
     const reneg = (await store.getDeal(dealId))!.renegSessionId!;
 
-    // Lowball relentlessly so the reneg walks (rounds exhausted).
+    // Hold out with a credible-but-unmet offer so the reneg exhausts its rounds
+    // and walks. The reneg floor is the CURRENT price ($48, never reprices below
+    // it), so the offer must clear $48 to be credible — a lower one is refused.
     let walked = false;
     for (let i = 0; i < 8; i++) {
       const v = await service.getSessionView(reneg);
       if (v.status !== "open") break;
-      const t = await service.postMessage(reneg, "$1");
+      const t = await service.postMessage(reneg, "$50");
       if (t.action.type === "walk") walked = true;
     }
     expect(walked).toBe(true);

@@ -19,7 +19,7 @@ import {
   openSession,
   anchor,
   reachableFloor,
-  appliedDrop,
+  pullToward,
   round2,
 } from "./engine.js";
 
@@ -35,39 +35,34 @@ const CFG: Config = {
   lambda: 0.6,
 };
 
-/** The give on the very first push, for a given reasoning tier. */
+/** The give on the very first push (toward a credible $24 offer), for a tier. */
 function firstGive(tier: Reasoning): number {
   const s = openSession(CFG, 0);
-  const a = decide(s, 1, CFG, 0, { reasoning: tier });
+  const a = decide(s, 24, CFG, 0, { reasoning: tier });
   return a.type === "counter" ? round2(s.currentAsk - a.amount) : 0;
 }
 
-describe("pushback earns a give (decoupled from argument validity)", () => {
-  it("a genuine push moves the number even with a weak or absent case", () => {
+describe("a credible push earns a give (gap-anchored, decoupled from argument validity)", () => {
+  it("a credible push moves the number even with a weak or absent case", () => {
     for (const tier of ["none", "weak"] as const) {
-      const s = openSession(CFG, 0);
-      const a = decide(s, 10, CFG, 0, { reasoning: tier });
+      const s = openSession(CFG, 0); // ask 48
+      const a = decide(s, 24, CFG, 0, { reasoning: tier }); // credible offer (>= 0.3×48)
       expect(a.type, tier).toBe("counter");
       if (a.type === "counter") {
-        // Moved off the anchor — not the old wall that held until a case was
-        // graded "valid". (Magnitude is room_factor-scaled; here we only assert
-        // it moved — the size/shape is covered by the room_factor tests below.)
-        expect(a.amount, tier).toBeLessThan(s.currentAsk);
-        // ...but a weak/no case can't cross the target.
-        expect(a.amount, tier).toBeGreaterThanOrEqual(CFG.targetPrice - 1e-9);
+        expect(a.amount, tier).toBeLessThan(s.currentAsk); // moved toward the buyer
+        expect(a.amount, tier).toBeGreaterThan(24); // never below their offer
+        expect(a.amount, tier).toBeGreaterThanOrEqual(CFG.targetPrice - 1e-9); // weak/none can't cross target
       }
     }
   });
 
-  it("validity sets the SIZE of the give, not its existence", () => {
+  it("validity sets the SIZE of the give (a stronger move pulls harder), not its existence", () => {
     const none = firstGive("none");
     const weak = firstGive("weak");
     const moderate = firstGive("moderate");
     const strong = firstGive("strong");
-    // Everyone gets something...
-    expect(none).toBeGreaterThan(0);
-    // ...and a better case gives a strictly bigger slice.
-    expect(weak).toBeGreaterThan(none);
+    expect(none).toBeGreaterThan(0); // everyone who makes a credible offer gets a give...
+    expect(weak).toBeGreaterThan(none); // ...and a better case pulls a bigger slice of the gap
     expect(moderate).toBeGreaterThan(weak);
     expect(strong).toBeGreaterThan(moderate);
   });
@@ -82,26 +77,26 @@ describe("exposure scales with reach (a vague shoutout is still weak)", () => {
     let s = openSession(CFG, 0);
     let lowest = s.currentAsk;
     for (let i = 0; i < 40; i++) {
-      const a = decide(s, 1, CFG, 0, { reasoning: "weak" });
+      const offer = round2(s.currentAsk * 0.5); // credible (> 0.3×ask), never accepted
+      const a = decide(s, offer, CFG, 0, { reasoning: "weak" });
       if (a.type === "accept" || a.type === "walk") break;
       if ("amount" in a) lowest = Math.min(lowest, a.amount);
-      s = applyAction(s, 1, a);
+      s = applyAction(s, offer, a);
     }
     expect(lowest).toBeGreaterThanOrEqual(CFG.targetPrice - 1e-9); // never below target
     expect(lowest).toBeGreaterThan(CFG.floorPrice); // and nowhere near the floor
   });
 });
 
-describe("curve shape: generous early, stubborn near target/floor (same move, different room)", () => {
-  it("an identical move drops MORE near list than at target, and much less near floor", () => {
-    const tier = "strong" as const;
-    const nearList = appliedDrop(CFG.listPrice - 0.5, tier, CFG);     // top of the band
-    const atTarget = appliedDrop(CFG.targetPrice, tier, CFG);          // the handoff
-    const nearFloor = appliedDrop(CFG.floorPrice + 0.5, tier, CFG);    // the grind
-    expect(nearList).toBeGreaterThan(atTarget);   // gentler resistance up top
-    expect(atTarget).toBeGreaterThan(nearFloor);  // brutal near the floor
-    // The near-floor give is a small nudge, but never zero (room_floor_min).
-    expect(nearFloor).toBeGreaterThan(0);
+describe("room_factor still paces the leap (same move, different room)", () => {
+  it("an identical move pulls a BIGGER fraction of the gap near list than near floor", () => {
+    const w = 0.8; // a strong-ish pull weight
+    const dropNearList =
+      (CFG.listPrice - 0.5) - pullToward(CFG.listPrice - 0.5, (CFG.listPrice - 0.5) * 0.6, w, CFG, CFG.floorPrice);
+    const dropNearFloor =
+      (CFG.floorPrice + 2) - pullToward(CFG.floorPrice + 2, (CFG.floorPrice + 2) * 0.6, w, CFG, CFG.floorPrice);
+    expect(dropNearList).toBeGreaterThan(dropNearFloor); // wide room → a real leap; steep room → a nudge
+    expect(dropNearFloor).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -109,10 +104,10 @@ describe("walks are for abuse, never for haggling", () => {
   it("a cold-start haggle never walks a stubborn lowballer — it holds (endOnRoundsExhausted off)", () => {
     let s = openSession(CFG, 0);
     for (let i = 0; i < 30; i++) {
-      const a = decide(s, 1, CFG, 0, { reasoning: "none" }); // relentless $1, no case
+      const a = decide(s, 20, CFG, 0, { reasoning: "none" }); // relentless credible $20, no case
       expect(a.type).not.toBe("walk"); // Vini stands firm, he never rage-quits
       if (a.type === "accept") break;
-      s = applyAction(s, 1, a);
+      s = applyAction(s, 20, a);
     }
   });
 
@@ -120,10 +115,10 @@ describe("walks are for abuse, never for haggling", () => {
     let s = openSession(CFG, 0);
     let walked = false;
     for (let i = 0; i < 30; i++) {
-      const a = decide(s, 1, CFG, 0, { reasoning: "none", endOnRoundsExhausted: true });
+      const a = decide(s, 20, CFG, 0, { reasoning: "none", endOnRoundsExhausted: true });
       if (a.type === "walk") { walked = true; break; }
       if (a.type === "accept") break;
-      s = applyAction(s, 1, a);
+      s = applyAction(s, 20, a);
     }
     expect(walked).toBe(true); // the only difference is the opt-in flag
   });

@@ -10,6 +10,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import type { Action } from "../engine.js";
+import { LOWBALL_THRESHOLD } from "../engine.js";
 import type { Extraction, Persona, ChatTurn } from "./types.js";
 import { permittedAmount } from "./validator.js";
 import { discoveryPromptFragment, type DiscoveryView } from "./discovery.js";
@@ -59,6 +60,13 @@ function decisionLine(action: Action, extraction: Extraction): string {
         ? `DECISION: FINAL OFFER $${fmt(action.amount)}/mo. This is the bottom of what you can do, say you went to bat with the boss and $${fmt(action.amount)} is genuinely it. Stand firm but stay warm, you are NOT kicking them out or slamming any door, you're just done moving on price. No threats, no countdown, just "that's my number, it's a good one, it's here when you want it."`
         : ordinaryCounterLine(action.amount, extraction);
     case "hold": {
+      const offer = extraction.offer_amount;
+      // An offer wildly below the standing ask is an INSULT — Vini refuses to even
+      // engage it (the engine held, gave nothing). Roast it, don't chase it, and
+      // get firmer (never softer) if they keep lobbing insults.
+      const insulting = offer !== null && offer < action.amount * LOWBALL_THRESHOLD;
+      if (insulting)
+        return `DECISION: HOLD at $${fmt(action.amount)}/mo, do NOT lower it a cent. They lobbed an insulting lowball ($${fmt(offer)}) — that's not an offer, that's a joke. Refuse to engage that number, roast it with a grin, and tell them to come back with something real. If they keep throwing insults, get FIRMER, not softer. The price is $${fmt(action.amount)}.`;
       const lowballedNoReason =
         (extraction.intent === "offer" || extraction.intent === "reject") && extraction.reasoning === "none";
       return lowballedNoReason

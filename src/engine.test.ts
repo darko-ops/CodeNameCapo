@@ -50,12 +50,16 @@ describe("scripted negotiation (sanity)", () => {
     expect(a.type).not.toBe("accept");
   });
 
-  it("counters a lowball with a smaller-than-anchor, floor-respecting ask", () => {
-    const s = openSession(CFG, 0);
-    const a = decide(s, 5, CFG, 0); // way below floor
+  it("refuses an insulting lowball (holds), but counters a credible offer toward it", () => {
+    const s = openSession(CFG, 0); // ask 48
+    // $5 is an insult (below floor AND << 0.3×48): refused, not chased.
+    expect(decide(s, 5, CFG, 0)).toEqual({ type: "hold", amount: 48 });
+    // A credible $30 offer pulls Vini's counter TOWARD it, above floor, above the offer.
+    const a = decide(s, 30, CFG, 0);
     expect(a.type).toBe("counter");
     if (a.type === "counter") {
-      expect(a.amount).toBeLessThan(s.currentAsk);
+      expect(a.amount).toBeLessThan(s.currentAsk); // moved off the anchor
+      expect(a.amount).toBeGreaterThan(30); // never below the buyer's own offer
       expect(a.amount).toBeGreaterThanOrEqual(CFG.floorPrice);
       expect(a.isFinal).toBe(false);
     }
@@ -66,25 +70,26 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, null, CFG, 0)).toEqual({ type: "hold", amount: 48 });
   });
 
-  it("reasoning 'none': every push earns a give, monotone, and never crosses target", () => {
-    let s = openSession(CFG, 0);
+  it("reasoning 'none': a credible push is met toward the offer, monotone, never below target", () => {
+    let s = openSession(CFG, 0); // ask 48
 
-    // First bare push still moves the number (room_factor is full up near the
-    // anchor) — Vini isn't a wall — but `none` can never be talked past target.
-    const first = decide(s, 12, CFG, 0, { reasoning: "none" });
+    // A credible $24 offer pulls Vini down a bit — but `none` lands above the
+    // offer and can never be talked past the target.
+    const first = decide(s, 24, CFG, 0, { reasoning: "none" });
     expect(first.type).toBe("counter");
     if (first.type === "counter") {
       expect(first.amount).toBeLessThan(s.currentAsk); // it moved
+      expect(first.amount).toBeGreaterThan(24); // never below the buyer's offer
       expect(first.amount).toBeGreaterThanOrEqual(CFG.targetPrice - 1e-9);
     }
 
-    // Keep pushing: each round concedes, monotone non-increasing, never below the
-    // target (none's reachable floor). The give shrinks as the price descends.
+    // Keep offering a credible (descending) number: monotone, never below target.
     for (let i = 0; i < 30; i++) {
-      const act = decide(s, 12, CFG, 0, { reasoning: "none" });
+      const offer = round2(Math.max(CFG.targetPrice, s.currentAsk * 0.6));
+      const act = decide(s, offer, CFG, 0, { reasoning: "none" });
       if (act.type === "accept" || act.type === "walk") break;
       const prev = s.currentAsk;
-      s = applyAction(s, 12, act);
+      s = applyAction(s, offer, act);
       expect(s.currentAsk).toBeLessThanOrEqual(prev + 1e-9); // monotone
       expect(s.currentAsk).toBeGreaterThanOrEqual(CFG.targetPrice - 1e-9); // never below target
     }
@@ -95,25 +100,23 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, 47, CFG, 0, { reasoning: "none" })).toEqual({ type: "accept", amount: 47 });
   });
 
-  it("stronger reasoning unlocks a strictly lower reachable price", () => {
-    // Drive a relentless $1 lowballer to the bottom for each tier; compare floors.
-    const lowestFor = (tier: "weak" | "moderate" | "strong") => {
-      let s = openSession(CFG, 0);
-      let lowest = s.currentAsk;
-      for (let i = 0; i < 40; i++) {
-        const a = decide(s, 1, CFG, 0, { reasoning: tier });
-        if (a.type === "accept" || a.type === "walk") break;
-        s = applyAction(s, 1, a);
-        if ("amount" in a) lowest = Math.min(lowest, a.amount);
-      }
-      return lowest;
+  it("a stronger move pulls the counter CLOSER to the buyer's number (gap-anchored)", () => {
+    const s: SessionState = { round: 0, currentAsk: 30, openedAt: 0, history: [] };
+    const offer = 20; // credible (>= 0.3×30 and >= floor)
+    const counterFor = (tier: "none" | "weak" | "moderate" | "strong") => {
+      const a = decide(s, offer, CFG, 0, { reasoning: tier });
+      expect(a.type, tier).toBe("counter");
+      return a.type === "counter" ? a.amount : NaN;
     };
-    const weak = lowestFor("weak");
-    const moderate = lowestFor("moderate");
-    const strong = lowestFor("strong");
-    expect(weak).toBeGreaterThan(moderate); // weak can't go as low
-    expect(moderate).toBeGreaterThan(strong); // moderate can't reach the strong floor
-    expect(strong).toBeGreaterThanOrEqual(CFG.floorPrice); // strong reaches ~hard floor, never below
+    const none = counterFor("none");
+    const weak = counterFor("weak");
+    const moderate = counterFor("moderate");
+    const strong = counterFor("strong");
+    expect(none).toBeGreaterThan(weak); // a stronger move pulls harder...
+    expect(weak).toBeGreaterThan(moderate);
+    expect(moderate).toBeGreaterThan(strong); // ...landing closer to the buyer's number
+    expect(strong).toBeGreaterThan(offer); // but never below their own offer
+    expect(strong).toBeGreaterThanOrEqual(CFG.floorPrice);
   });
 
   it("a reason with NO number still moves the price (word of mouth)", () => {
@@ -126,20 +129,25 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, null, CFG, 0, { reasoning: "none" }).type).toBe("hold");
   });
 
-  it("meets a reasoned offer with a conversational handshake, never below it", () => {
-    // Reproduces the live bug: late in the haggle the concession curve has
-    // decayed below the user's offer, so the old split-the-difference proposed
-    // LESS than they offered ($44 ask, user offers $40 + word of mouth → it
-    // countered to ~$30). With genuine reasoning and an offer above what that
-    // reasoning could even unlock, come DOWN to meet their number — and do it
-    // conversationally (agreed handshake), not an instant close.
+  it("negotiates TOWARD a credible offer — lands above it, below the ask (never undercuts)", () => {
     const s: SessionState = { round: 4, currentAsk: 44, openedAt: 0, history: [] };
-    const a = decide(s, 40, CFG, 0, { reasoning: "moderate" }); // moderate rf=15
+    const a = decide(s, 40, CFG, 0, { reasoning: "moderate" });
     expect(a.type).toBe("counter");
     if (a.type === "counter") {
-      expect(a.amount).toBe(40); // settles AT their offer, never below
-      expect(a.agreed).toBe(true); // a handshake, not a fresh haggle counter
+      expect(a.amount).toBeGreaterThan(40); // never below the buyer's own offer
+      expect(a.amount).toBeLessThan(44); // but moved toward them off the ask
       expect(a.isFinal).toBe(false);
+    }
+  });
+
+  it("a near-met credible offer converges to a conversational handshake (agreed)", () => {
+    const s: SessionState = { round: 3, currentAsk: 44, openedAt: 0, history: [] };
+    const a = decide(s, 42, CFG, 0, { reasoning: "moderate" }); // small gap, below acceptThreshold
+    expect(a.type).toBe("counter");
+    if (a.type === "counter") {
+      expect(a.amount).toBeGreaterThanOrEqual(42); // never below their offer
+      expect(a.amount).toBeLessThan(44);
+      expect(a.agreed).toBe(true); // basically there → handshake, not a fresh haggle
     }
   });
 

@@ -89,6 +89,8 @@ export async function runTurn(ctx: TurnContext): Promise<TurnResult> {
     : decide(state, offer, cfg, now, {
         reasoning: extraction.reasoning,
         endOnRoundsExhausted: ctx.endOnRoundsExhausted ?? false,
+        // Exposure/reach is priced as a token here (tone is the renderer's job).
+        exposure: extraction.tactics.includes("exposure_offer"),
       });
 
   // 3. Advance state.

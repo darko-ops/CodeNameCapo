@@ -84,8 +84,8 @@ describe("HTTP API (Spec §9)", () => {
     expect(session_token).toMatch(/^sst_/);
     expect(expires_at).toBeGreaterThan(Date.now());
 
-    // message — lowball, counters
-    const m1 = await post(app, `/v1/sessions/${session_id}/messages`, { message: "5 bucks" }, tok(session_token));
+    // message — credible low offer, counters toward it ($5 would be an insult)
+    const m1 = await post(app, `/v1/sessions/${session_id}/messages`, { message: "25 bucks" }, tok(session_token));
     const b1 = await m1.json();
     expect(b1.action.type).toBe("counter");
     expect(b1.state.status).toBe("open");
@@ -168,7 +168,7 @@ describe("SSE streaming (Spec §10)", () => {
   it("emits a typing event then a validated reply", async () => {
     const { app } = makeApp();
     const { id, token } = await startSession(app);
-    const res = await post(app, `/v1/sessions/${id}/messages/stream`, { message: "I'll do $4" }, tok(token));
+    const res = await post(app, `/v1/sessions/${id}/messages/stream`, { message: "I'll do $25" }, tok(token));
     expect(res.headers.get("content-type")).toContain("text/event-stream");
     const text = await res.text();
     expect(text).toContain("event: typing");

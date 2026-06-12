@@ -88,7 +88,7 @@ describe("MCP server (Streamable HTTP)", () => {
     expect(s.session_token).toMatch(/^sst_/);
     expect(s.current_ask).toBeGreaterThan(0);
 
-    const offer = await tool(app, "bouncr_offer", { session_id: s.session_id, session_token: s.session_token, message: "$5" }, 2);
+    const offer = await tool(app, "bouncr_offer", { session_id: s.session_id, session_token: s.session_token, message: "$25" }, 2);
     expect(offer.structuredContent.action.type).toBe("counter");
 
     // Meet the standing ask → the engine accepts and hands back a checkout URL.

@@ -73,8 +73,9 @@ describe("full negotiate → accept → settle flow", () => {
     const { store, stripe, service } = makeService();
     const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "user_1" });
 
-    // Lowball — engine counters, no deal yet.
-    const t1 = await service.postMessage(sessionId, "I'll give you 3 bucks");
+    // Credible low offer — engine counters TOWARD it, no deal yet. (A $3 insult
+    // would be refused/held; $25 is a real number on the $48 ask.)
+    const t1 = await service.postMessage(sessionId, "I'll give you 25");
     expect(t1.action.type).toBe("counter");
     expect(t1.checkoutUrl).toBeUndefined();
     expect(t1.status).toBe("open");
