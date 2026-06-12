@@ -41,7 +41,14 @@ export class FakeStripeGateway implements StripeGateway {
 
   parseWebhook(rawBody: string): WebhookEvent {
     // Sandbox trusts the body — no signature verification.
-    let body: { type?: string; checkoutId?: string; subscriptionId?: string | null };
+    let body: {
+      type?: string;
+      eventId?: string;
+      accountId?: string | null;
+      checkoutId?: string;
+      subscriptionId?: string | null;
+      paymentIntentId?: string | null;
+    };
     try {
       body = JSON.parse(rawBody);
     } catch {
@@ -50,8 +57,11 @@ export class FakeStripeGateway implements StripeGateway {
     if (body.type === "checkout.session.completed" && body.checkoutId) {
       return {
         type: "checkout.session.completed",
+        eventId: body.eventId ?? `evt_test_${randomUUID().slice(0, 8)}`,
+        accountId: body.accountId ?? null,
         checkoutId: body.checkoutId,
         subscriptionId: body.subscriptionId ?? `sub_test_${randomUUID().slice(0, 8)}`,
+        paymentIntentId: body.paymentIntentId ?? null,
       };
     }
     return { type: "ignored" };
@@ -68,9 +78,15 @@ export class FakeStripeGateway implements StripeGateway {
   }
 
   /** Test helper: synthesize the webhook body Stripe would POST on completion. */
-  static completedWebhookBody(checkoutId: string, subscriptionId?: string): string {
+  static completedWebhookBody(
+    checkoutId: string,
+    subscriptionId?: string,
+    opts: { eventId?: string; accountId?: string | null } = {},
+  ): string {
     return JSON.stringify({
       type: "checkout.session.completed",
+      eventId: opts.eventId ?? null,
+      accountId: opts.accountId ?? null,
       checkoutId,
       subscriptionId: subscriptionId ?? null,
     });

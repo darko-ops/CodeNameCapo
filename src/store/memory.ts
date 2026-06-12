@@ -62,7 +62,7 @@ export class MemoryStore implements Store {
     return clone(merchant);
   }
 
-  async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash">>): Promise<Merchant> {
+  async updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash" | "webhookUrl" | "webhookSecret" | "liveMode">>): Promise<Merchant> {
     const m = this.merchants.get(id);
     if (!m) throw new Error(`merchant ${id} not found`);
     Object.assign(m, patch);

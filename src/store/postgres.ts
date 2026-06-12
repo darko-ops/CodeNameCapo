@@ -79,13 +79,16 @@ export class PostgresStore implements Store {
 
   async updateMerchant(
     id: string,
-    patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash">>,
+    patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash" | "webhookUrl" | "webhookSecret" | "liveMode">>,
   ): Promise<Merchant> {
     const rows = await this.sql`
       update bouncr.merchants set
         stripe_connect_id = coalesce(${patch.stripeConnectId ?? null}, stripe_connect_id),
         api_key_hash      = coalesce(${patch.apiKeyHash ?? null}, api_key_hash),
-        password_hash     = coalesce(${patch.passwordHash ?? null}, password_hash)
+        password_hash     = coalesce(${patch.passwordHash ?? null}, password_hash),
+        webhook_url       = ${patch.webhookUrl === null ? null : this.sql`coalesce(${patch.webhookUrl ?? null}, webhook_url)`},
+        webhook_secret    = coalesce(${patch.webhookSecret ?? null}, webhook_secret),
+        live_mode         = coalesce(${patch.liveMode ?? null}, live_mode)
       where id = ${id} returning *`;
     if (!rows[0]) throw new Error(`merchant ${id} not found`);
     return mapMerchant(rows[0]);
@@ -397,6 +400,9 @@ function mapMerchant(r: any): Merchant {
     passwordHash: r.password_hash ?? null,
     stripeConnectId: r.stripe_connect_id ?? null,
     apiKeyHash: r.api_key_hash ?? null,
+    webhookUrl: r.webhook_url ?? null,
+    webhookSecret: r.webhook_secret ?? null,
+    liveMode: r.live_mode ?? false,
     createdAt: Number(r.created_at),
   };
 }

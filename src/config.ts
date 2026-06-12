@@ -20,6 +20,7 @@ import { makeAnthropicNegotiator, makeTemplateNegotiator } from "./llm/negotiato
 import type { Mailer } from "./mailer.js";
 import { ConsoleMailer, ResendMailer } from "./mailer.js";
 import { ProofSigner } from "./proof.js";
+import { FetchNotifier } from "./notify.js";
 import { BouncrService } from "./service.js";
 
 /** The demo merchant Bouncr ships with (Connect not yet onboarded). */
@@ -176,6 +177,7 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
     baseUrl: env.BOUNCR_BASE_URL ?? "http://localhost:8787",
     applicationFeePercent,
     proofSigner,
+    notifier: new FetchNotifier(), // real signed POST to merchants' webhook URLs
   });
 
   return {

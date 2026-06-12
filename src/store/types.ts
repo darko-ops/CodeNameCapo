@@ -27,6 +27,12 @@ export interface Merchant {
   stripeConnectId: string | null;
   /** SHA-256 of the merchant's programmatic API key (agents / MCP), or null. */
   apiKeyHash: string | null;
+  /** Where Bouncr POSTs entitlement notifications on settle (merchant grants access). */
+  webhookUrl?: string | null;
+  /** Per-merchant OUTBOUND signing secret for entitlement webhooks (HMAC-SHA256). */
+  webhookSecret?: string | null;
+  /** Whether the merchant has switched to live mode (gated on webhookUrl, Spec §5). */
+  liveMode?: boolean;
   createdAt: number;
 }
 
@@ -208,7 +214,10 @@ export interface Store {
   /** Resolve a merchant by email (login lookup), case-insensitive. */
   getMerchantByEmail(email: string): Promise<Merchant | null>;
   createMerchant(merchant: Merchant): Promise<Merchant>;
-  updateMerchant(id: string, patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash">>): Promise<Merchant>;
+  updateMerchant(
+    id: string,
+    patch: Partial<Pick<Merchant, "stripeConnectId" | "apiKeyHash" | "passwordHash" | "webhookUrl" | "webhookSecret" | "liveMode">>,
+  ): Promise<Merchant>;
   /** Permanently delete a merchant and everything under it (cascade). */
   deleteMerchant(id: string): Promise<void>;
 

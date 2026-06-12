@@ -17,12 +17,18 @@ create table if not exists bouncr.merchants (
   password_hash      text,          -- scrypt$salt$hash of the dashboard password
   stripe_connect_id  text,
   api_key_hash       text,          -- SHA-256 of the programmatic API key (agents / MCP)
+  webhook_url        text,          -- entitlement notifications POST here
+  webhook_secret     text,          -- outbound HMAC signing secret (distinct from api key)
+  live_mode          boolean not null default false,
   created_at         bigint not null
 );
 -- Idempotent adds for existing deployments (these columns are new).
 alter table bouncr.merchants add column if not exists api_key_hash text;
 alter table bouncr.merchants add column if not exists email text;
 alter table bouncr.merchants add column if not exists password_hash text;
+alter table bouncr.merchants add column if not exists webhook_url    text;
+alter table bouncr.merchants add column if not exists webhook_secret text;
+alter table bouncr.merchants add column if not exists live_mode      boolean not null default false;
 -- Email is the login key — enforce case-insensitive uniqueness.
 create unique index if not exists merchants_email_unique
   on bouncr.merchants (lower(email)) where email is not null;

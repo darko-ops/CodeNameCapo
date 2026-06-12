@@ -156,13 +156,21 @@ export class LiveStripeGateway implements StripeGateway {
     if (!signature) throw new Error("missing Stripe-Signature header");
     // Throws on signature mismatch — the caller returns 400 (Spec §12: verified webhooks only).
     const event = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
+    // For Connect direct charges the event fires on the connected account, surfaced
+    // as `event.account` — carried through for account-scoping in the service.
+    const accountId = (event as unknown as { account?: string | null }).account ?? null;
 
     if (event.type === "checkout.session.completed") {
       const s = event.data.object as Stripe.Checkout.Session;
-      const subscriptionId =
-        typeof s.subscription === "string" ? s.subscription : (s.subscription?.id ?? null);
-      return { type: "checkout.session.completed", checkoutId: s.id, subscriptionId };
+      const subscriptionId = typeof s.subscription === "string" ? s.subscription : (s.subscription?.id ?? null);
+      const paymentIntentId = typeof s.payment_intent === "string" ? s.payment_intent : (s.payment_intent?.id ?? null);
+      return { type: "checkout.session.completed", eventId: event.id, accountId, checkoutId: s.id, subscriptionId, paymentIntentId };
     }
+    // invoice.paid (recurring renewals) and payment_intent.succeeded (one-time)
+    // confirm money moved, but the INITIAL settlement is driven off
+    // checkout.session.completed (which carries the deal's checkout id and the
+    // subscription/payment-intent). We recognize these without re-settling — the
+    // deal-already-settled guard makes any overlap an idempotent no-op.
     return { type: "ignored" };
   }
 }

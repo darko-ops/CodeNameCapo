@@ -3,7 +3,7 @@ import { BouncrService, ServiceError } from "./service.js";
 import { MemoryStore } from "./store/memory.js";
 import { FakeStripeGateway } from "./stripe/fake.js";
 import { makeTemplateNegotiator } from "./llm/negotiator.js";
-import { demoPlan } from "./config.js";
+import { demoPlan, demoMerchant } from "./config.js";
 import { ProofSigner, mintProof } from "./proof.js";
 import type { WebhookEvent } from "./stripe/gateway.js";
 
@@ -21,8 +21,10 @@ function makeService() {
   return { store, stripe, service };
 }
 
-const completed = (checkoutId: string, sub = "sub_test_1"): WebhookEvent => ({
+const completed = (checkoutId: string, sub = "sub_test_1", accountId: string | null = null): WebhookEvent => ({
   type: "checkout.session.completed",
+  eventId: "evt_x",
+  accountId,
   checkoutId,
   subscriptionId: sub,
 });
@@ -238,5 +240,97 @@ describe("hosted checkout settlement (proof → Connect)", () => {
     expect(r.state).toBe("redirect");
     expect(stripe.checkouts.at(-1)!.interval).toBe("one_time");
     expect(stripe.checkouts.at(-1)!.amount).toBe(9);
+  });
+});
+
+describe("webhook account-scoping + entitlement notification (settlement §4)", () => {
+  // A capturing notifier so we can assert the signed POST (and simulate failure).
+  class CaptureNotifier {
+    calls: { url: string; secret: string; payload: any; nowMs: number }[] = [];
+    fail = false;
+    async notify(url: string, secret: string, payload: any, nowMs: number) {
+      this.calls.push({ url, secret, payload, nowMs });
+      if (this.fail) throw new Error("merchant endpoint down");
+    }
+  }
+
+  function setup(opts: { connectId?: string | null; webhookUrl?: string | null; notifier?: any } = {}) {
+    const plan = demoPlan();
+    const merchant = { ...demoMerchant(), stripeConnectId: opts.connectId ?? null, webhookUrl: opts.webhookUrl ?? null, webhookSecret: opts.webhookUrl ? "whsec_test" : null };
+    const store = new MemoryStore([plan], [merchant]);
+    const stripe = new FakeStripeGateway();
+    const service = new BouncrService({ store, stripe, negotiator: makeTemplateNegotiator(), baseUrl: "http://x", ...(opts.notifier ? { notifier: opts.notifier } : {}) });
+    return { plan, store, stripe, service };
+  }
+
+  async function settle(service: BouncrService, store: MemoryStore, planId: string, accountId: string | null) {
+    const { sessionId } = await service.createSession({ planId, endUserRef: "buyer" });
+    const acc = await service.acceptCurrent(sessionId);
+    await pay(service, acc);
+    const deal = await store.getDeal(acc.dealId);
+    return { acc, checkoutId: deal!.stripeCheckoutId!, accountId };
+  }
+
+  it("rejects a webhook whose connected account isn't the deal's merchant (cross-account)", async () => {
+    const notifier = new CaptureNotifier();
+    const { store, service, plan } = setup({ connectId: "acct_A", webhookUrl: "https://m.test/hook", notifier });
+    const { acc, checkoutId } = await settle(service, store, plan.id, "acct_A");
+
+    // Event from a DIFFERENT connected account → not settled, no notify.
+    const wrong = await service.handleStripeEvent(completed(checkoutId, "sub_1", "acct_B"));
+    expect(wrong).toEqual({ settled: false });
+    expect((await store.getDeal(acc.dealId))?.status).toBe("pending");
+    expect(notifier.calls).toHaveLength(0);
+
+    // The right account settles it (once).
+    const ok = await service.handleStripeEvent(completed(checkoutId, "sub_1", "acct_A"));
+    expect(ok).toMatchObject({ settled: true });
+    expect((await store.getDeal(acc.dealId))?.status).toBe("settled");
+  });
+
+  it("on settle: records the entitlement durably AND sends a signed webhook to the merchant", async () => {
+    const notifier = new CaptureNotifier();
+    const { store, service, plan } = setup({ connectId: null, webhookUrl: "https://m.test/hook", notifier });
+    const { acc, checkoutId } = await settle(service, store, plan.id, null);
+    await service.handleStripeEvent(completed(checkoutId, "sub_1"));
+
+    // Durable entitlement event recorded.
+    const events = store.allEvents();
+    expect(events.some((e) => e.type === "entitlement.recorded")).toBe(true);
+    expect(events.some((e) => e.type === "entitlement.delivered")).toBe(true);
+    // Signed POST with the right payload.
+    expect(notifier.calls).toHaveLength(1);
+    expect(notifier.calls[0]!.payload).toMatchObject({
+      deal_id: acc.dealId, end_user_ref: "buyer", plan_id: plan.id, status: "active", currency: "usd",
+    });
+    expect(notifier.calls[0]!.payload.amount).toBe(Math.round(acc.price * 100));
+  });
+
+  it("a missing/failing webhook_url does NOT fail settlement (deal stays settled)", async () => {
+    // No webhook_url → skip-if-unset; deal still settles.
+    const skip = setup({ webhookUrl: null });
+    const a = await settle(skip.service, skip.store, skip.plan.id, null);
+    expect((await skip.service.handleStripeEvent(completed(a.checkoutId, "sub_1"))).settled).toBe(true);
+    expect((await skip.store.getDeal(a.acc.dealId))?.status).toBe("settled");
+    expect(skip.store.allEvents().some((e) => e.type === "entitlement.skipped")).toBe(true);
+
+    // Failing POST → still settled, failure recorded (durable event already written).
+    const notifier = new CaptureNotifier();
+    notifier.fail = true;
+    const fail = setup({ webhookUrl: "https://m.test/hook", notifier });
+    const b = await settle(fail.service, fail.store, fail.plan.id, null);
+    expect((await fail.service.handleStripeEvent(completed(b.checkoutId, "sub_1"))).settled).toBe(true);
+    expect((await fail.store.getDeal(b.acc.dealId))?.status).toBe("settled");
+    expect(fail.store.allEvents().some((e) => e.type === "entitlement.recorded")).toBe(true);
+    expect(fail.store.allEvents().some((e) => e.type === "entitlement.delivery_failed")).toBe(true);
+  });
+
+  it("a redelivered Stripe event does not double-notify", async () => {
+    const notifier = new CaptureNotifier();
+    const { store, service, plan } = setup({ webhookUrl: "https://m.test/hook", notifier });
+    const { checkoutId } = await settle(service, store, plan.id, null);
+    await service.handleStripeEvent(completed(checkoutId, "sub_1"));
+    await service.handleStripeEvent(completed(checkoutId, "sub_1")); // redelivery
+    expect(notifier.calls).toHaveLength(1); // settled-guard → no second notify
   });
 });

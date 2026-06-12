@@ -27,8 +27,10 @@ function setup(
   return { plan, store, stripe, service };
 }
 
-const completed = (checkoutId: string): WebhookEvent => ({
+const completed = (checkoutId: string, accountId: string | null = null): WebhookEvent => ({
   type: "checkout.session.completed",
+  eventId: "evt_x",
+  accountId,
   checkoutId,
   subscriptionId: "sub_x",
 });

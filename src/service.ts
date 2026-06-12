@@ -31,6 +31,7 @@ import type { Negotiator } from "./llm/negotiator.js";
 import type { ChatTurn } from "./llm/types.js";
 import { computeAnalytics } from "./analytics.js";
 import { ProofSigner, mintProof, type ProofVerifier, type ProofClaims, type ProofError, type ProofInterval } from "./proof.js";
+import { NoopNotifier, type EntitlementNotifier, type EntitlementPayload } from "./notify.js";
 import { lintConfig, type LintResult } from "./lint.js";
 import { buildRenegConfig, type RenegDirection, type RenegPlan } from "./reneg.js";
 
@@ -63,6 +64,8 @@ export interface ServiceDeps {
   /** Signs/serves settlement proofs (hosted-checkout path). Defaults to an
    *  ephemeral key when omitted (tests/dev); production injects a stable key. */
   proofSigner?: ProofSigner;
+  /** Delivers entitlement webhooks to merchants on settle. Defaults to no-op. */
+  notifier?: EntitlementNotifier;
 }
 
 export interface CreateSessionInput {
@@ -122,6 +125,7 @@ export class BouncrService {
   private readonly applicationFeePercent: number;
   private readonly proofSigner: ProofSigner;
   private readonly proofVerifier: ProofVerifier;
+  private readonly notifier: EntitlementNotifier;
 
   constructor(deps: ServiceDeps) {
     this.store = deps.store;
@@ -133,6 +137,7 @@ export class BouncrService {
     this.applicationFeePercent = Number.isFinite(fee) ? Math.max(0, Math.min(100, fee)) : 0;
     this.proofSigner = deps.proofSigner ?? ProofSigner.ephemeral();
     this.proofVerifier = this.proofSigner.verifier();
+    this.notifier = deps.notifier ?? new NoopNotifier();
   }
 
   // --- Settlement proofs (hosted-checkout path) ----------------------------
@@ -854,7 +859,13 @@ export class BouncrService {
 
   // --- Settlement -----------------------------------------------------------
 
-  /** Handle a normalized Stripe webhook event. Idempotent on re-delivery. */
+  /**
+   * Handle a normalized Stripe webhook event (Spec settlement §4). Idempotent on
+   * re-delivery (the deal-settled guard), account-scoped (a webhook carrying a
+   * connected account must match the deal's merchant — A can't settle B's deal),
+   * and on first settle it durably records the entitlement then best-effort
+   * notifies the merchant. The outbound notify NEVER fails settlement.
+   */
   async handleStripeEvent(event: WebhookEvent): Promise<{ settled: boolean; dealId?: string }> {
     if (event.type !== "checkout.session.completed") return { settled: false };
 
@@ -865,9 +876,23 @@ export class BouncrService {
     }
     if (deal.status === "settled") return { settled: true, dealId: deal.id }; // idempotent
 
+    // Account-scoping: when the event carries a connected account, it MUST be the
+    // deal's merchant's account. (A null account = platform-level event.)
+    const merchant = await this.store.getMerchant(deal.merchantId);
+    if (event.accountId && event.accountId !== (merchant?.stripeConnectId ?? null)) {
+      await this.store.appendEvent("webhook.account_mismatch", {
+        dealId: deal.id,
+        eventAccount: event.accountId,
+        eventId: event.eventId,
+      });
+      return { settled: false };
+    }
+
     await this.store.updateDeal(deal.id, {
       status: "settled",
       stripeSubscriptionId: event.subscriptionId,
+      ...(event.paymentIntentId ? { paymentIntentId: event.paymentIntentId } : {}),
+      checkoutStatus: "completed",
       settledAt: this.now(),
     });
     await this.store.updateSession(deal.sessionId, { status: "settled" });
@@ -875,8 +900,49 @@ export class BouncrService {
       dealId: deal.id,
       subscriptionId: event.subscriptionId,
       price: deal.price,
+      eventId: event.eventId,
     });
+
+    // Durably record the entitlement BEFORE any outbound POST, then best-effort
+    // notify the merchant to grant access (skip-if-unset; failures don't roll back).
+    await this.notifyEntitlement(deal, merchant ?? null, event.eventId);
     return { settled: true, dealId: deal.id };
+  }
+
+  /**
+   * Record the entitlement durably, then best-effort POST it to the merchant. The
+   * durable event is the load-bearing part: a settlement that happened is always
+   * recorded (so retries are a later bolt-on over recorded events). A missing
+   * webhook_url or a failed POST is logged, never thrown — money already moved.
+   */
+  private async notifyEntitlement(deal: DealRecord, merchant: Merchant | null, eventId: string): Promise<void> {
+    const payload: EntitlementPayload = {
+      deal_id: deal.id,
+      end_user_ref: deal.endUserRef,
+      plan_id: deal.planId,
+      amount: Math.round(deal.price * 100),
+      currency: deal.currency,
+      status: "active",
+    };
+    // Durable record of the entitlement — written BEFORE any outbound attempt.
+    await this.store.appendEvent("entitlement.recorded", { ...payload, eventId });
+
+    if (!merchant?.webhookUrl || !merchant.webhookSecret) {
+      await this.store.appendEvent("entitlement.skipped", { dealId: deal.id, reason: "no webhook_url" });
+      return;
+    }
+    try {
+      await this.notifier.notify(merchant.webhookUrl, merchant.webhookSecret, payload, this.now());
+      await this.store.appendEvent("entitlement.delivered", { dealId: deal.id, eventId });
+    } catch (err) {
+      // Stub for the durable-retry bolt-on: the event above is already recorded,
+      // so a future replayer can re-POST without any new plumbing.
+      await this.store.appendEvent("entitlement.delivery_failed", {
+        dealId: deal.id,
+        eventId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   // --- Internals ------------------------------------------------------------

@@ -57,9 +57,20 @@ export interface CheckoutResult {
   expiresAt?: number | null;
 }
 
-/** Normalized webhook event — only what Phase 1 settlement cares about. */
+/**
+ * Normalized settlement webhook. `eventId` is Stripe's event id (idempotency);
+ * `accountId` is the connected account the event fired on (account-scoping — a
+ * webhook for merchant A must never settle merchant B's deal).
+ */
 export type WebhookEvent =
-  | { type: "checkout.session.completed"; checkoutId: string; subscriptionId: string | null }
+  | {
+      type: "checkout.session.completed";
+      eventId: string;
+      accountId: string | null;
+      checkoutId: string;
+      subscriptionId: string | null;
+      paymentIntentId?: string | null;
+    }
   | { type: "ignored" };
 
 export interface SubscriptionUpdateParams {
