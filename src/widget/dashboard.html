@@ -153,6 +153,7 @@
 
       <div class="seclabel">Willingness to pay</div>
       <div class="card chart">
+        <p class="meta" style="margin:0 0 10px">Each bar is a completed purchase — how much that customer actually paid.</p>
         <canvas id="hist" height="220"></canvas>
         <div class="meta" id="hist-legend" style="margin-top:8px"></div>
       </div>
@@ -458,27 +459,66 @@
       : '<span class="meta">No tactics recorded yet.</span>';
   }
 
+  // WTP chart: one bar per completed purchase. x = the customer, y = the price
+  // they settled at. Horizontal dashed lines mark floor / target / list.
+  function shortUser(u) { u = String(u == null ? "anon" : u); return u.length > 11 ? u.slice(0, 10) + "…" : u; }
   function renderHist(a) {
-    const ref = a.reference, data = a.offers.firstOffers.concat(a.offers.closingPrices);
     const cv = $("hist"); if (!cv.clientWidth) return; const ctx = cv.getContext("2d");
-    const W = cv.width = cv.clientWidth * 2, H = cv.height = 420;
+    const ref = a.reference, data = (a.settlements || []).slice();
+    const W = cv.width = cv.clientWidth * 2, H = cv.height = 440;
     ctx.clearRect(0, 0, W, H);
-    const max = Math.max(ref.anchor * 1.1, ...(data.length ? data : [ref.anchor]));
-    const bins = 24, counts = new Array(bins).fill(0);
-    for (const v of data) counts[Math.min(bins - 1, Math.floor((v / max) * bins))]++;
-    const peak = Math.max(1, ...counts), pad = 34, bw = (W - pad * 2) / bins;
-    ctx.fillStyle = "#7C3AED";
-    counts.forEach((n, i) => { const h = (n / peak) * (H - pad * 2); ctx.fillRect(pad + i * bw + 2, H - pad - h, bw - 4, h); });
-    const lineAt = (val, color, label) => {
-      const x = pad + (val / max) * (W - pad * 2);
-      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
-      ctx.beginPath(); ctx.moveTo(x, pad / 2); ctx.lineTo(x, H - pad); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = color; ctx.font = "600 20px ui-sans-serif, sans-serif"; ctx.fillText(label, x + 4, pad);
+    const padL = 72, padR = 104, padT = 22, padB = 60;
+    const plotW = W - padL - padR, plotH = H - padT - padB, base = padT + plotH;
+    const yMax = Math.max(ref.list, ...(data.length ? data.map((d) => d.price) : [ref.list])) * 1.12;
+    const y = (v) => padT + plotH - (v / yMax) * plotH;
+
+    // axes + price gridlines (y) with $ labels
+    ctx.font = "500 18px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (let i = 0; i <= 4; i++) {
+      const val = (yMax / 4) * i, yy = y(val);
+      ctx.strokeStyle = "#1a1a24"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + plotW, yy); ctx.stroke();
+      ctx.fillStyle = "#6B7280"; ctx.fillText("$" + Math.round(val), padL - 12, yy);
+    }
+    ctx.strokeStyle = "#23232f"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, base); ctx.lineTo(padL + plotW, base); ctx.stroke();
+
+    // reference lines (floor / target / list)
+    const refLine = (val, color, label) => {
+      const yy = y(val);
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + plotW, yy); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = color; ctx.textAlign = "left"; ctx.font = "600 17px ui-sans-serif, sans-serif";
+      ctx.fillText(label + " $" + val, padL + plotW + 8, yy);
     };
-    lineAt(ref.floor, "#f87171", "floor $" + ref.floor);
-    lineAt(ref.target, "#34D399", "target $" + ref.target);
-    lineAt(ref.list, "#9a9aa8", "list $" + ref.list);
-    $("hist-legend").textContent = `First offers + closing prices (n=${data.length}). Dashed lines: floor / target / list.`;
+    refLine(ref.list, "#9a9aa8", "list");
+    refLine(ref.target, "#34D399", "target");
+    refLine(ref.floor, "#f87171", "floor");
+
+    if (!data.length) {
+      ctx.fillStyle = "#6B7280"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "500 20px ui-sans-serif, sans-serif";
+      ctx.fillText("No completed purchases yet", padL + plotW / 2, padT + plotH / 2);
+      $("hist-legend").textContent = "Each bar will be one settled deal (x: customer, y: price). Dashed lines: floor / target / list.";
+      return;
+    }
+
+    // bars — one per settled deal
+    const slot = plotW / data.length, bw = Math.min(slot * 0.6, 70);
+    data.forEach((d, i) => {
+      const cx = padL + slot * i + slot / 2, yy = y(d.price);
+      ctx.fillStyle = "#7C3AED"; ctx.fillRect(cx - bw / 2, yy, bw, base - yy);
+      if (slot > 40) { // price on top
+        ctx.fillStyle = "#E5E7EB"; ctx.font = "700 16px ui-sans-serif, sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("$" + d.price, cx, yy - 5);
+      }
+      if (slot > 46) { // customer under the axis
+        ctx.fillStyle = "#9CA3AF"; ctx.font = "500 15px ui-sans-serif, sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillText(shortUser(d.user), cx, base + 10);
+      }
+    });
+    const n = data.length;
+    $("hist-legend").textContent = `${n} completed purchase${n === 1 ? "" : "s"} · x: customer, y: price settled. Dashed lines: floor / target / list.`;
   }
 
   async function renderSessions() {

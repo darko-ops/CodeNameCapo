@@ -215,6 +215,9 @@ describe("WTP analytics (Spec §11)", () => {
     expect(an.funnel.settled).toBe(1);
     expect(an.offers.firstOffers.sort((x, y) => x - y)).toEqual([3, 5]);
     expect(an.offers.closingPrices).toEqual([ask]);
+    // One settled purchase → one WTP bar: user "a" at the settled price.
+    expect(an.settlements).toHaveLength(1);
+    expect(an.settlements[0]).toMatchObject({ user: "a", price: ask });
     expect(an.closing.medianPrice).toBe(ask);
     expect(an.closing.revenue).toBe(ask);
     expect(an.reference).toMatchObject({ list: 30, target: 32, floor: 22 });

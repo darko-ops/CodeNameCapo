@@ -25,6 +25,9 @@ export interface Analytics {
     firstOffers: number[]; // each session's first numeric offer
     closingPrices: number[]; // each settled/accepted deal price
   };
+  /** One entry per settled deal (completed purchase) — the WTP bar chart:
+   *  x = the user who bought, y = the price they settled at. Oldest first. */
+  settlements: { user: string; price: number; at: number }[];
   closing: {
     avgRoundsToClose: number | null;
     medianPrice: number | null;
@@ -85,6 +88,13 @@ export async function computeAnalytics(store: Store, plan: Plan): Promise<Analyt
   const closedDeals = deals.filter((d) => d.status !== "canceled");
   const closingPrices = closedDeals.map((d) => d.price);
 
+  // Per-settlement series for the WTP bar chart: one bar per completed purchase,
+  // oldest first (chronological), each tagged with the buyer.
+  const settlements = settledDeals
+    .slice()
+    .sort((a, b) => (a.settledAt ?? a.createdAt) - (b.settledAt ?? b.createdAt))
+    .map((d) => ({ user: d.endUserRef, price: d.price, at: d.settledAt ?? d.createdAt }));
+
   // --- closing stats -------------------------------------------------------
   const acceptedSessions = sessions.filter((s) => s.status === "accepted" || s.status === "settled");
   const avgRoundsToClose = acceptedSessions.length
@@ -122,6 +132,7 @@ export async function computeAnalytics(store: Store, plan: Plan): Promise<Analyt
     reference: { list: plan.config.listPrice, target: plan.config.targetPrice, floor: plan.config.floorPrice, anchor },
     funnel: { sessions: sessions.length, engaged, accepted, settled, walkByRound },
     offers: { firstOffers, closingPrices },
+    settlements,
     closing: { avgRoundsToClose, medianPrice, revenue, listCounterfactual, upliftPct },
     tactics: tacticRates(turns),
     reneg: {
