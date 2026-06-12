@@ -295,6 +295,22 @@ export class PostgresStore implements Store {
     return rows[0] ? Number(rows[0].until_ms) : null;
   }
 
+  async isProofRedeemed(jti: string): Promise<boolean> {
+    const rows = await this.sql`select 1 from bouncr.proof_redemptions where jti = ${jti} limit 1`;
+    return rows.length > 0;
+  }
+
+  async redeemProof(jti: string, dealId: string, at: number): Promise<boolean> {
+    // Atomic single-use: the unique PK rejects a duplicate; `do nothing returning`
+    // yields a row only when THIS insert won the race.
+    const rows = await this.sql`
+      insert into bouncr.proof_redemptions (jti, deal_id, created_at)
+      values (${jti}, ${dealId}, ${at})
+      on conflict (jti) do nothing
+      returning jti`;
+    return rows.length > 0;
+  }
+
   // --- row mappers (numeric comes back as string in postgres.js) ------------
 
   private toSession(r: any): SessionRecord {

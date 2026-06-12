@@ -30,6 +30,7 @@ import type { WebhookEvent } from "./stripe/gateway.js";
 import type { Negotiator } from "./llm/negotiator.js";
 import type { ChatTurn } from "./llm/types.js";
 import { computeAnalytics } from "./analytics.js";
+import { ProofSigner, type ProofVerifier, type ProofClaims, type ProofError } from "./proof.js";
 import { lintConfig, type LintResult } from "./lint.js";
 import { buildRenegConfig, type RenegDirection, type RenegPlan } from "./reneg.js";
 
@@ -59,6 +60,9 @@ export interface ServiceDeps {
    * connected account. Defaults to 0 (merchant keeps 100%).
    */
   applicationFeePercent?: number;
+  /** Signs/serves settlement proofs (hosted-checkout path). Defaults to an
+   *  ephemeral key when omitted (tests/dev); production injects a stable key. */
+  proofSigner?: ProofSigner;
 }
 
 export interface CreateSessionInput {
@@ -108,6 +112,8 @@ export class BouncrService {
   private readonly now: () => number;
   /** Platform take-rate (% of each settled invoice), clamped to [0, 100]. */
   private readonly applicationFeePercent: number;
+  private readonly proofSigner: ProofSigner;
+  private readonly proofVerifier: ProofVerifier;
 
   constructor(deps: ServiceDeps) {
     this.store = deps.store;
@@ -117,6 +123,32 @@ export class BouncrService {
     this.now = deps.now ?? Date.now;
     const fee = deps.applicationFeePercent ?? 0;
     this.applicationFeePercent = Number.isFinite(fee) ? Math.max(0, Math.min(100, fee)) : 0;
+    this.proofSigner = deps.proofSigner ?? ProofSigner.ephemeral();
+    this.proofVerifier = this.proofSigner.verifier();
+  }
+
+  // --- Settlement proofs (hosted-checkout path) ----------------------------
+
+  /** The public JWKS so merchants can verify Bouncr-issued proofs independently. */
+  publicJwks(): { keys: Record<string, unknown>[] } {
+    return { keys: [this.proofSigner.publicJwk()] };
+  }
+
+  /**
+   * Verify a settlement proof for the checkout PAGE (read-only): signature +
+   * expiry + issuer (crypto), then `aud` must equal the plan's merchant, and the
+   * jti must not already be spent. Does NOT burn the jti. Returns typed claims or
+   * a typed reason. The amount only ever comes from the verified token.
+   */
+  async verifyProof(
+    token: string,
+  ): Promise<{ ok: true; claims: ProofClaims } | { ok: false; reason: ProofError | "aud_mismatch" | "redeemed" }> {
+    const res = this.proofVerifier.verify(token, this.now());
+    if (!res.ok) return res;
+    const plan = await this.store.getPlanById(res.claims.plan_id);
+    if (!plan || plan.merchantId !== res.claims.aud) return { ok: false, reason: "aud_mismatch" };
+    if (await this.store.isProofRedeemed(res.claims.jti)) return { ok: false, reason: "redeemed" };
+    return { ok: true, claims: res.claims };
   }
 
   /** Effective take-rate for a plan: its per-plan override if set, else the

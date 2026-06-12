@@ -19,6 +19,7 @@ import type { Negotiator } from "./llm/negotiator.js";
 import { makeAnthropicNegotiator, makeTemplateNegotiator } from "./llm/negotiator.js";
 import type { Mailer } from "./mailer.js";
 import { ConsoleMailer, ResendMailer } from "./mailer.js";
+import { ProofSigner } from "./proof.js";
 import { BouncrService } from "./service.js";
 
 /** The demo merchant Bouncr ships with (Connect not yet onboarded). */
@@ -156,12 +157,25 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
   // Platform take-rate (Connect application fee), e.g. BOUNCR_APPLICATION_FEE_PERCENT=20.
   const applicationFeePercent = Number(env.BOUNCR_APPLICATION_FEE_PERCENT ?? "") || 0;
 
+  // Settlement-proof signing key (Ed25519). A stable PKCS8 PEM from env keeps
+  // proofs verifiable across restarts/instances and publishes a stable JWKS;
+  // without it we mint an ephemeral keypair (dev only — proofs die on redeploy).
+  const proofKid = env.BOUNCR_PROOF_KID ?? "bouncr-1";
+  let proofSigner: ProofSigner;
+  if (env.BOUNCR_PROOF_PRIVATE_KEY) {
+    proofSigner = ProofSigner.fromPem(env.BOUNCR_PROOF_PRIVATE_KEY, proofKid);
+  } else {
+    proofSigner = ProofSigner.ephemeral("bouncr-dev");
+    console.warn("[proof] BOUNCR_PROOF_PRIVATE_KEY unset — using an ephemeral key (proofs won't survive a restart)");
+  }
+
   const service = new BouncrService({
     store,
     stripe,
     negotiator,
     baseUrl: env.BOUNCR_BASE_URL ?? "http://localhost:8787",
     applicationFeePercent,
+    proofSigner,
   });
 
   return {

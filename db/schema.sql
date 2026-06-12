@@ -52,6 +52,14 @@ create table if not exists bouncr.cooldowns (
   primary key (plan_id, end_user_ref)
 );
 
+-- Single-use settlement proof nonces. A jti is inserted (burned) when a Stripe
+-- Checkout Session is created from a proof; the PK makes it single-use.
+create table if not exists bouncr.proof_redemptions (
+  jti         text primary key,
+  deal_id     text not null,
+  created_at  bigint not null
+);
+
 create table if not exists bouncr.sessions (
   id             uuid primary key default gen_random_uuid(),
   plan_id        text not null references bouncr.plans(id),

@@ -79,6 +79,12 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
 
   app.get("/healthz", (c) => c.json({ ok: true }));
 
+  // Public JWKS for settlement proofs — merchants verify Bouncr-issued tokens.
+  app.get("/.well-known/bouncr-jwks.json", (c) => {
+    c.header("cache-control", "public, max-age=3600");
+    return c.json(service.publicJwks());
+  });
+
   // --- merchant dashboard auth (Spec §9) -----------------------------------
   // Merchants log in with email + password; login exchanges them for a
   // short-lived signed token (stateless HMAC — no session store, works across

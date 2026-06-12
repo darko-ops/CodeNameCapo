@@ -33,6 +33,7 @@ export class MemoryStore implements Store {
   private usage = new Map<string, UsageCycle[]>(); // dealId -> cycles
   private events: EventRecord[] = [];
   private cooldowns = new Map<string, number>(); // `${planId}:${endUserRef}` -> until ms
+  private redemptions = new Map<string, { dealId: string; at: number }>(); // jti -> spent
 
   constructor(plans: Plan[] = [], merchants: Merchant[] = []) {
     for (const p of plans) this.plans.set(p.id, clone(p));
@@ -230,5 +231,15 @@ export class MemoryStore implements Store {
 
   async getCooldown(planId: string, endUserRef: string): Promise<number | null> {
     return this.cooldowns.get(`${planId}:${endUserRef}`) ?? null;
+  }
+
+  async isProofRedeemed(jti: string): Promise<boolean> {
+    return this.redemptions.has(jti);
+  }
+
+  async redeemProof(jti: string, dealId: string, at: number): Promise<boolean> {
+    if (this.redemptions.has(jti)) return false;
+    this.redemptions.set(jti, { dealId, at });
+    return true;
   }
 }

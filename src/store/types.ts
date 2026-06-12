@@ -226,4 +226,13 @@ export interface Store {
   setCooldown(planId: string, endUserRef: string, until: number): Promise<void>;
   /** The cooldown expiry ms for this user+plan, or null if none. */
   getCooldown(planId: string, endUserRef: string): Promise<number | null>;
+
+  /** Whether a settlement proof nonce has already been spent. */
+  isProofRedeemed(jti: string): Promise<boolean>;
+  /**
+   * Atomically record a proof nonce as spent. Returns true iff THIS call burned
+   * it (false if it was already spent). This atomicity is the single-use
+   * guarantee — two parallel checkouts can't both win.
+   */
+  redeemProof(jti: string, dealId: string, at: number): Promise<boolean>;
 }

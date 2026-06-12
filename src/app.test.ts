@@ -186,6 +186,22 @@ describe("embeddable widget assets (Spec §10)", () => {
   });
 });
 
+describe("settlement proof JWKS", () => {
+  it("publishes a verifiable Ed25519 public key, no private material", async () => {
+    const { app } = makeApp();
+    const r = await app.request("/.well-known/bouncr-jwks.json");
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(Array.isArray(body.keys)).toBe(true);
+    const k = body.keys[0];
+    expect(k.kty).toBe("OKP");
+    expect(k.crv).toBe("Ed25519");
+    expect(k.alg).toBe("EdDSA");
+    expect(k.x).toBeTruthy();
+    expect(k.d).toBeUndefined(); // never leak the private scalar
+  });
+});
+
 describe("invisible rate limiting", () => {
   it("throttles a message burst with an in-character reply, never an error", async () => {
     const { app } = makeApp();
