@@ -70,10 +70,16 @@ describe("ordinaryCounterLine — tone by what the user brought", () => {
     }
   });
 
-  it("deflects an exposure offer instead of granting a special discount", () => {
+  it("deflects a VAGUE/small exposure offer (weak) instead of granting a discount", () => {
     const line = ordinaryCounterLine(31, extr({ tactics: ["exposure_offer"], reasoning: "weak" })).toLowerCase();
-    expect(line).toMatch(/exposure|shoutout|follower/);
-    expect(line).toMatch(/do not give|don't give|wave it off|can't pay rent/); // no special discount for clout
+    expect(line).toMatch(/shoutout|follow|clout|bank/);
+    expect(line).toMatch(/do not give|don't give|wave it off/); // no special discount for vague clout
+  });
+
+  it("ACKNOWLEDGES a big-reach exposure offer (strong) — real marketing value, not deflected", () => {
+    const line = ordinaryCounterLine(31, extr({ tactics: ["exposure_offer"], reasoning: "strong" })).toLowerCase();
+    expect(line).toMatch(/reach|audience|referral|marketing value/);
+    expect(line).not.toMatch(/wave it off|do not give|don't give/); // a big audience is real value
   });
 
   it("on a no-case push, gives a token bit and asks for a real case", () => {

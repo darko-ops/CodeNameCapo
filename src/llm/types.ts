@@ -30,10 +30,11 @@ export const TacticSchema = z.enum([
   "fake_authority",
   "walkaway_threat",
   /**
-   * Dangling promotion/exposure/clout ("I'll post about you", "I have 50k
-   * followers", "I'll tell my audience"). Flagged so the persona deflects it and
-   * so it can later be ROUTED to the merchant's loss-leader budget — it is NOT a
-   * general-concession lever (see extractor reasoning tiers + the renderer).
+   * Promotion / exposure / clout / referral ("I'll post about you", "I have 50k
+   * followers", "I'll refer my whole team"). Flagged for the persona. Its WEIGHT
+   * scales with reach: a vague shoutout grades weak (and gets deflected), a big
+   * specific audience or mass referral grades up into moderate/strong (real,
+   * scalable marketing value — rewarded with a bigger give).
    */
   "exposure_offer",
 ]);
@@ -52,14 +53,14 @@ export const ExtractionSchema = z.object({
    * Defaults to "none" if the model omits it (no concession beyond goodwill).
    *   none     — a bare number, insistence, empty flattery, threats
    *   weak     — generic sympathy or unverifiable social pressure: "im broke",
-   *              "im a student", a vague walkaway, OR a promise of exposure/clout
-   *              ("i'll post about you", "i have a big following"). Exposure is
-   *              demoted here on purpose — it is NOT a path to the floor; it earns
-   *              only the normal dance (and routes to loss-leaders if enabled).
-   *   moderate — a concrete anchor/commitment: a competitor's price, annual pay, loyalty, one referral
-   *   strong   — high, CONCRETE business value: bulk/team seats, a real paid
-   *              partnership, a committed referral pipeline. NOT a vague promise
-   *              of promotion (that's an exposure_offer → weak).
+   *              "im a student", a vague walkaway, OR a SMALL/vague shoutout.
+   *   moderate — a concrete anchor/commitment OR a real referral / mid-size
+   *              audience: a competitor's price, annual pay, loyalty, "i'll share
+   *              you with my network".
+   *   strong   — high, CONCRETE, scalable value: bulk/team seats, a paid
+   *              partnership, a committed referral pipeline, OR a BIG specific
+   *              audience ("50k followers and i'll post"). Reach scales the tier —
+   *              sharing with lots of people is real value, rewarded accordingly.
    */
   reasoning: z.enum(["none", "weak", "moderate", "strong"]).default("none"),
 });

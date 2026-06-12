@@ -73,11 +73,12 @@ describe("pushback earns a give (decoupled from argument validity)", () => {
   });
 });
 
-describe("virality is demoted (exposure is not a skeleton key)", () => {
-  it("an exposure-grade case (weak) bottoms out at target, nowhere near the floor", () => {
-    // Exposure now extracts as reasoning "weak" (see extractor); weak's reachable
-    // floor is the target, so even a relentless exposure-dangling lowballer can
-    // never be talked to the hard floor.
+describe("exposure scales with reach (a vague shoutout is still weak)", () => {
+  it("a small/vague shoutout (weak) bottoms out at target, nowhere near the floor", () => {
+    // A vague shoutout / tiny following extracts weak; weak's reachable floor is
+    // the target, so it can't be talked to the hard floor. (A BIG, specific
+    // audience grades up to moderate/strong and earns a much bigger give — that's
+    // the variance; here we pin the floor of the scale.)
     let s = openSession(CFG, 0);
     let lowest = s.currentAsk;
     for (let i = 0; i < 40; i++) {

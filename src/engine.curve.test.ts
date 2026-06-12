@@ -102,28 +102,31 @@ describe("appliedDrop = base_band × list × room_factor", () => {
     expect(appliedDrop(at, "weak", CFG)).toBeGreaterThan(appliedDrop(at, "none", CFG));
   });
 
-  it("a special situation drops MUCH more than the same tier ordinarily (the +10%)", () => {
+  it("the special bonus on a low-tier deal-maker drops much more than that tier ordinarily", () => {
     const at = CFG.listPrice - 0.5;
-    expect(appliedDrop(at, "strong", CFG, { special: true })).toBeGreaterThan(
-      appliedDrop(at, "strong", CFG) * 3, // +10% on a 3% base ≈ 4× the give
+    // e.g. a bare credible walk-away extracts weak, but special lifts it big.
+    expect(appliedDrop(at, "weak", CFG, { special: true })).toBeGreaterThan(
+      appliedDrop(at, "weak", CFG) * 2,
     );
   });
 });
 
-describe("give-band scale: 2% min, 13% max, +10% special", () => {
-  it("the ordinary band floor is MIN_BAND (2%) and ordinary bands stay low (≤3%)", () => {
+describe("give-band scale: wide variance, 2% min, 13% max", () => {
+  it("bands span MIN_BAND (2%) → MAX_BAND (13%), strictly increasing by tier (variance)", () => {
     expect(bandFor("none")).toBe(MIN_BAND);
     expect(MIN_BAND).toBeCloseTo(0.02, 9);
-    for (const t of ["none", "weak", "moderate", "strong"] as const) {
-      expect(bandFor(t, false)).toBeGreaterThanOrEqual(MIN_BAND - 1e-9);
-      expect(bandFor(t, false)).toBeLessThanOrEqual(0.03 + 1e-9);
-    }
+    expect(bandFor("strong")).toBe(MAX_BAND);
+    expect(MAX_BAND).toBeCloseTo(0.13, 9);
+    // a flat lowball and a big-audience offer must NOT feel the same — strict spread
+    expect(bandFor("weak")).toBeGreaterThan(bandFor("none"));
+    expect(bandFor("moderate")).toBeGreaterThan(bandFor("weak"));
+    expect(bandFor("strong")).toBeGreaterThan(bandFor("moderate"));
   });
 
-  it("a special situation adds +10% and reaches the 13% ceiling, never past it", () => {
+  it("the special bonus (+10%) lifts a low tier toward the ceiling, clamped at MAX_BAND", () => {
     expect(SPECIAL_SITUATION_BONUS).toBeCloseTo(0.1, 9);
-    expect(MAX_BAND).toBeCloseTo(0.13, 9);
-    expect(bandFor("strong", true)).toBeCloseTo(MAX_BAND, 9); // 3% base + 10% = 13%
-    expect(bandFor("strong", true)).toBeLessThanOrEqual(MAX_BAND + 1e-9); // clamp holds the ceiling
+    expect(bandFor("weak", true)).toBeGreaterThan(bandFor("weak", false)); // +10pp lift
+    expect(bandFor("weak", true)).toBeLessThanOrEqual(MAX_BAND + 1e-9); // never past the ceiling
+    expect(bandFor("strong", true)).toBeCloseTo(MAX_BAND, 9); // already at the cap
   });
 });

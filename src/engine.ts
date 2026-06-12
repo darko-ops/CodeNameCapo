@@ -149,26 +149,30 @@ export const MIN_BAND = 0.02; // 2% — even a flat lowball still nudges the num
 export const MAX_BAND = 0.13; // 13% — the most a single move can ever be worth
 
 /**
- * Special situations — a real commitment/bundle or a credible walk-away (the
- * deal-making, hardest-to-fake moves) — add this on top of the base band. With a
- * ~3% base that reaches the 13% ceiling. Capped at MAX_BAND so it can't run away.
+ * Special-situation bonus — added on top of the base band to lift a deal-making
+ * move that landed in a LOW tier (e.g. a bare credible walk-away) up toward the
+ * ceiling. Capped at MAX_BAND so it can't run away. Big audiences/commitments
+ * don't need it — they already grade into the strong tier.
  */
 export const SPECIAL_SITUATION_BONUS = 0.1; // +10 percentage points
 
 /**
- * Per-move base "give band" as a PERCENT of list price. Bigger move → bigger band.
- * Sourced here from the reasoning tier as an interim mapping; the full give-band
- * table (commitment, walk-away, flinch, …) plugs in at this seam without changing
- * the curve math. Ordinary moves sit low (2–3%); the big gives come from the
- * special-situation bonus, not the base. Feel knob — tune by ear.
- *   none ≈ persistence/lowball/flattery · weak ≈ flinch/budget
- *   moderate ≈ competitor/loyalty · strong ≈ commitment/credible-walk (special)
+ * Per-move base "give band" as a PERCENT of list price. Bigger move → bigger band,
+ * spread WIDE so different moves produce visibly different drops (variance is the
+ * point — a flat lowball and a 50k-follower offer should not feel the same). The
+ * tier is the interim source; the full give-band table plugs in at this seam.
+ * Feel knob — tune by ear. Reach scales the tier (see extractor): a big audience /
+ * mass referral grades up into moderate/strong, a vague shoutout stays weak.
+ *   none 2% ≈ bare lowball / persistence / flattery
+ *   weak 5% ≈ budget plea / flinch / a small or vague shoutout
+ *   moderate 9% ≈ competitor price / loyalty / a real referral or audience
+ *   strong 13% ≈ commitment/bundle / credible walk / a big, scaled audience
  */
 export const BASE_BAND_BY_TIER: Record<Reasoning, number> = {
   none: 0.02,
-  weak: 0.025,
-  moderate: 0.03,
-  strong: 0.03,
+  weak: 0.05,
+  moderate: 0.09,
+  strong: 0.13,
 };
 
 /**
@@ -267,11 +271,13 @@ export function decide(
   opts: { reasoning?: Reasoning; endOnRoundsExhausted?: boolean; special?: boolean } = {},
 ): Action {
   const tier: Reasoning = opts.reasoning ?? "strong";
-  // Special situation = a deal-making move (commitment / credible walk-away) that
-  // earns the +10% band bonus. Interim: inferred from the "strong" tier; the
-  // pipeline can pass opts.special explicitly once the give-band table detects
-  // the exact move (commitment vs. a first credible walk vs. a repeat bluff).
-  const special = opts.special ?? tier === "strong";
+  // Special situation = a deal-making move that arrives as a LOW tier but deserves
+  // a top give — e.g. a bare "I'm out" credible walk-away (extracts as none/weak)
+  // that should still move Vini a lot. It adds the band bonus (capped at MAX_BAND).
+  // Off by default; the pipeline opts in once the give-band table detects the exact
+  // move (a first credible walk vs. a repeat bluff). A big audience/commitment
+  // already grades up to the strong tier (13%), so it needs no bonus.
+  const special = opts.special ?? false;
 
   // I3: expiry is evaluated here, never trusted from the client.
   if (now - s.openedAt > c.maxDurationH * 3_600_000) return { type: "walk" };

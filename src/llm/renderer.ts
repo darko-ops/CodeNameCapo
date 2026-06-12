@@ -20,24 +20,29 @@ export const RENDERER_MODEL = "claude-sonnet-4-6";
  * An ordinary (non-final, non-handshake) counter. The engine already decided the
  * NUMBER as part of the dance — every genuine push earns a little give. This line
  * only sets the TONE, by what the user brought this turn:
- *   - exposure/clout dangled → deflect it, give only the normal bump, no special
- *     discount (exposure routes to the loss-leader budget, not general haggling);
- *   - no real case ("none") → token give for persistence + a nudge to actually
- *     make a case;
- *   - a real case (moderate/strong) → let the drop feel a little earned.
+ *   - a real case (moderate/strong), INCLUDING a big audience / mass referral →
+ *     acknowledge it, let the (already bigger) give feel earned;
+ *   - a vague/tiny shoutout (weak/none + exposure) → wave it off, no special cut;
+ *   - no real case ("none") → token give for persistence + a nudge to make a case.
  */
 export function ordinaryCounterLine(amount: number, extraction: Extraction): string {
   const amt = fmt(amount);
   const base = `DECISION: COUNTER at $${amt}/mo. Play it like a pawn-shop haggle: act like you just went and checked with the higher-ups, came back, and $${amt} is genuinely the best you can do. Hold firm, don't sound desperate.`;
+  const exposure = extraction.tactics.includes("exposure_offer");
 
-  if (extraction.tactics.includes("exposure_offer")) {
-    return `${base} They're dangling exposure, a shoutout, or their follower count. You can't pay rent with exposure, so do NOT give them a special discount for it, wave it off with a grin and let $${amt} just be the normal bump for actually haggling. (If the house were running a promo you'd loop them in, but it isn't.)`;
+  // A REAL case (moderate/strong) is acknowledged — and a big audience / mass
+  // referral is a real case, so don't deflect it, let the give reflect the reach.
+  if (extraction.reasoning === "moderate" || extraction.reasoning === "strong") {
+    return exposure
+      ? `${base} They're bringing real reach, a big audience or a mass referral, that's actual marketing value to the house, not just hot air. Acknowledge it like it genuinely moved you and let $${amt} reflect it.`
+      : `${base} They actually made a fair case, so let $${amt} feel a little earned, nod to what moved you instead of pure stonewalling.`;
+  }
+  // A vague/tiny shoutout (weak/none + exposure) gets deflected — can't bank clout.
+  if (exposure) {
+    return `${base} They're dangling a vague shoutout or a tiny following, nothing real you can bank. Wave it off with a grin and do NOT give a special discount for it, let $${amt} just be the normal bump for haggling.`;
   }
   if (extraction.reasoning === "none") {
     return `${base} They haven't really made a case, they're just pushing, so this is a token give for the hustle, not because they earned a big cut. Tell them straight: if they want a real dent they gotta give you something real, a budget, a competitor's price, an actual commitment.`;
-  }
-  if (extraction.reasoning === "moderate" || extraction.reasoning === "strong") {
-    return `${base} They actually made a fair case, so let $${amt} feel a little earned, nod to what moved you instead of pure stonewalling.`;
   }
   return base;
 }
@@ -102,7 +107,7 @@ Examples of the vibe: "hang on lemme check… ok, talked to the suits, best i ca
 
 THE HAGGLE IS A DANCE: every real push earns a little give, even a weak one, that's just how haggling feels. You're allowed to come down a bit purely because you like their persistence, their style, or a good bit, not only for a business reason ("alright, you're relentless, I respect it, here's a little off, don't push it"). What you can NEVER do is go below the one number you're handed above, charm changes the vibe and the banter, never the math.
 
-RESPECT REAL VALUE: roast bare lowballs and empty tactics all you want, but if they bring something genuinely useful (a referral, a real commitment, a fair competitor point), acknowledge it like it actually helps, because it does, that's how new members walk in. Don't punch down at someone making a fair case, especially a newcomer. But clout and "exposure" aren't value you can bank, if someone leads with "I'll post about you / I have X followers", wave it off with a joke and make them haggle like everyone else, don't hand them a discount for a shoutout.
+RESPECT REAL VALUE: roast bare lowballs and empty tactics all you want, but if they bring something genuinely useful (a referral, a real commitment, a fair competitor point), acknowledge it like it actually helps, because it does, that's how new members walk in. Don't punch down at someone making a fair case, especially a newcomer. On exposure, judge it by REACH: a vague shoutout or a tiny following is just clout you can't bank, wave that off with a joke. But a big, specific audience or a real mass referral (tens of thousands of followers, a whole community, a real network) is genuine scalable marketing value, treat it like the real deal it is and let the price reflect it, don't reflexively wave off real reach.
 
 ${decisionLine(action, extraction)}${tacticHint}${discoveryBlock}
 
