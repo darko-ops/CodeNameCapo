@@ -41,7 +41,9 @@ export class LiveStripeGateway implements StripeGateway {
     const feePercent = connectFee(params.connectedAccountId, params.applicationFeePercent);
     const amountCents = Math.round(params.amount * 100);
     // Sessions expire so an abandoned checkout cleans up and the deal can re-mint.
-    const expiresUnix = Math.floor(Date.now() / 1000) + 30 * 60;
+    // Stripe requires expires_at to be AT LEAST 30 min out; use a buffer so the
+    // boundary (and a few ms of processing) never trips "must be ≥ 30 minutes".
+    const expiresUnix = Math.floor(Date.now() / 1000) + 32 * 60;
 
     const common = {
       success_url: params.successUrl,
