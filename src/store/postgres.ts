@@ -254,6 +254,10 @@ export class PostgresStore implements Store {
         price = coalesce(${patch.price ?? null}, price),
         stripe_checkout_id = coalesce(${patch.stripeCheckoutId ?? null}, stripe_checkout_id),
         stripe_subscription_id = coalesce(${patch.stripeSubscriptionId ?? null}, stripe_subscription_id),
+        payment_intent_id = coalesce(${patch.paymentIntentId ?? null}, payment_intent_id),
+        checkout_status = coalesce(${patch.checkoutStatus ?? null}, checkout_status),
+        checkout_url = ${patch.checkoutUrl === null ? null : this.sql`coalesce(${patch.checkoutUrl ?? null}, checkout_url)`},
+        checkout_expires_at = ${patch.checkoutExpiresAt === null ? null : this.sql`coalesce(${patch.checkoutExpiresAt ?? null}, checkout_expires_at)`},
         reneg_session_id = ${clearReneg ? null : this.sql`coalesce(${patch.renegSessionId ?? null}, reneg_session_id)`},
         settled_at = coalesce(${patch.settledAt ?? null}, settled_at)
       where id = ${id}
@@ -359,6 +363,10 @@ export class PostgresStore implements Store {
       kind: r.kind as DealKind,
       stripeCheckoutId: r.stripe_checkout_id ?? null,
       stripeSubscriptionId: r.stripe_subscription_id ?? null,
+      paymentIntentId: r.payment_intent_id ?? null,
+      checkoutStatus: (r.checkout_status ?? "none") as "none" | "pending" | "completed" | "expired",
+      checkoutUrl: r.checkout_url ?? null,
+      checkoutExpiresAt: r.checkout_expires_at === null || r.checkout_expires_at === undefined ? null : Number(r.checkout_expires_at),
       renegSessionId: r.reneg_session_id ?? null,
       createdAt: Number(r.created_at),
       settledAt: r.settled_at === null ? null : Number(r.settled_at),

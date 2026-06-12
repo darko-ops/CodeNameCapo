@@ -537,6 +537,15 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
   // without it asks for the email to send a link to.
   app.get("/reset", (c) => c.html(RESET_HTML));
   app.get("/forgot", (c) => c.html(RESET_HTML));
+
+  // Bouncr-hosted checkout (Spec settlement §2): verify the proof server-side,
+  // render the negotiated price, then hand off to Stripe. Resume/re-mint keep an
+  // abandoned checkout from dead-ending the deal.
+  app.get("/checkout/:deal_id", async (c) => {
+    const view = await service.getCheckoutView(c.req.param("deal_id")!, c.req.query("proof"));
+    if (view.state === "resume" || view.state === "remint") return c.redirect(view.url, 302);
+    return c.html(checkoutHtml(view));
+  });
   app.get("/embed.js", (c) => {
     c.header("content-type", "application/javascript; charset=utf-8");
     return c.body(EMBED_JS);
@@ -570,6 +579,47 @@ function baseFromReq(c: Context): string {
   } catch {
     return "http://localhost:8787";
   }
+}
+
+/** The Bouncr-hosted checkout page. Amount is server-verified (from the proof),
+ *  never the query string. "pay" shows the price + a button that POSTs the proof
+ *  to create the Stripe session; settled/expired are friendly end states. */
+function checkoutHtml(view: import("./service.js").CheckoutView): string {
+  const shell = (title: string, body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/><title>${title} · Bouncr</title>
+<link rel="icon" href="/favicon.ico"/>
+<style>:root{--bg:#0B0B12;--panel:#13131c;--line:#23232f;--text:#E5E7EB;--muted:#9CA3AF;--accent:#7C3AED;--mint:#34D399;--err:#F87171}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:420px;margin:12vh auto;padding:0 18px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:32px 28px;text-align:center}
+.logo{font-size:20px;font-weight:800;letter-spacing:-.4px;color:#fff;margin-bottom:22px}
+.amt{font-size:40px;font-weight:800;letter-spacing:-1px;margin:10px 0 2px}.per{color:var(--muted);font-size:14px;margin-bottom:4px}
+h1{font-size:19px;margin:0 0 6px}.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin:0 0 22px}
+button{width:100%;background:var(--accent);color:#fff;border:0;border-radius:10px;padding:13px;font:inherit;font-weight:700;cursor:pointer}button:hover{background:#6d28d9}
+.note{margin-top:16px;font-size:12px;color:var(--muted)}.big{font-size:34px;margin-bottom:10px}</style></head>
+<body><div class="wrap"><div class="card"><div class="logo">Bouncr</div>${body}</div></div></body></html>`;
+
+  if (view.state === "pay") {
+    const dollars = (view.amountCents / 100).toFixed(2);
+    const per = view.interval === "month" ? "/month" : "one-time";
+    return shell(
+      "Checkout",
+      `<h1>${esc(view.productName)}</h1>
+       <div class="amt">$${dollars}</div><div class="per">${per} · you negotiated this</div>
+       <form method="POST" action="/checkout/${esc(view.dealId)}/pay">
+         <input type="hidden" name="proof" value="${esc(view.proof)}"/>
+         <button type="submit">Pay $${dollars} →</button>
+       </form>
+       <div class="note">Secure payment by Stripe. ${view.interval === "month" ? "Cancel anytime." : ""}</div>`,
+    );
+  }
+  if (view.state === "settled") {
+    return shell("All set", `<div class="big">✓</div><h1>You're all set</h1><p class="sub">This deal is already paid. You can close this tab.</p>`);
+  }
+  // expired / unknown
+  return shell(
+    "Link expired",
+    `<div class="big">⌛</div><h1>This checkout link expired</h1><p class="sub">Negotiated prices are time-limited. Head back and start a fresh negotiation to lock in your price.</p>`,
+  );
 }
 
 /** HTML-escape for safe interpolation into the reset email. */

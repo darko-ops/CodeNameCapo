@@ -30,7 +30,7 @@ import type { WebhookEvent } from "./stripe/gateway.js";
 import type { Negotiator } from "./llm/negotiator.js";
 import type { ChatTurn } from "./llm/types.js";
 import { computeAnalytics } from "./analytics.js";
-import { ProofSigner, type ProofVerifier, type ProofClaims, type ProofError } from "./proof.js";
+import { ProofSigner, mintProof, type ProofVerifier, type ProofClaims, type ProofError, type ProofInterval } from "./proof.js";
 import { lintConfig, type LintResult } from "./lint.js";
 import { buildRenegConfig, type RenegDirection, type RenegPlan } from "./reneg.js";
 
@@ -96,6 +96,14 @@ export interface TurnResponse {
   dealId?: string;
 }
 
+/** What the hosted checkout page should render/do for a deal (see getCheckoutView). */
+export type CheckoutView =
+  | { state: "pay"; dealId: string; productName: string; amountCents: number; currency: string; interval: ProofInterval; proof: string }
+  | { state: "resume"; url: string }
+  | { state: "remint"; url: string }
+  | { state: "settled" }
+  | { state: "expired" };
+
 /** Public, token-gated session view for the widget (countdown, reconnect). */
 export interface SessionView {
   status: SessionRecord["status"];
@@ -149,6 +157,54 @@ export class BouncrService {
     if (!plan || plan.merchantId !== res.claims.aud) return { ok: false, reason: "aud_mismatch" };
     if (await this.store.isProofRedeemed(res.claims.jti)) return { ok: false, reason: "redeemed" };
     return { ok: true, claims: res.claims };
+  }
+
+  /** Mint a fresh proof for a deal and return the Bouncr-hosted checkout URL. */
+  private mintCheckoutUrl(deal: DealRecord, plan: Plan, interval: ProofInterval = "month"): string {
+    const { token } = mintProof(this.proofSigner, { deal, plan, nowMs: this.now(), interval });
+    return `${this.baseUrl}/checkout/${deal.id}?proof=${encodeURIComponent(token)}`;
+  }
+
+  /**
+   * Decide what the hosted checkout page should do for a deal + (optional) proof.
+   * Server-authoritative: the price only ever comes from a VERIFIED proof, and a
+   * deal is never dead-ended —
+   *   - settled            → "settled" (success)
+   *   - open Stripe session → "resume" (redirect to the same Stripe URL; no re-charge)
+   *   - valid proof         → "pay" (render the amount from the token)
+   *   - invalid/expired/used proof, deal still open → "remint" (fresh proof, same
+   *     engine-accepted amount, redirect back to the page)
+   *   - unknown deal        → "expired"
+   */
+  async getCheckoutView(dealId: string, proofToken: string | undefined): Promise<CheckoutView> {
+    const deal = await this.store.getDeal(dealId);
+    if (!deal) return { state: "expired" };
+    if (deal.status === "settled") return { state: "settled" };
+    const plan = await this.store.getPlanById(deal.planId);
+    if (!plan) return { state: "expired" };
+
+    const now = this.now();
+    // Resume an open, unexpired Stripe session instead of minting a new proof.
+    if (deal.checkoutStatus === "pending" && deal.checkoutUrl && (deal.checkoutExpiresAt ?? Infinity) > now) {
+      return { state: "resume", url: deal.checkoutUrl };
+    }
+
+    if (proofToken) {
+      const res = await this.verifyProof(proofToken);
+      if (res.ok && res.claims.deal_id === dealId) {
+        return {
+          state: "pay",
+          dealId,
+          productName: plan.persona.productName,
+          amountCents: res.claims.amount,
+          currency: res.claims.currency,
+          interval: res.claims.interval,
+          proof: proofToken,
+        };
+      }
+    }
+    // No/invalid/expired proof, but the deal is still open → re-mint (same amount).
+    return { state: "remint", url: this.mintCheckoutUrl(deal, plan) };
   }
 
   /** Effective take-rate for a plan: its per-plan override if set, else the

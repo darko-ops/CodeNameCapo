@@ -186,6 +186,39 @@ describe("embeddable widget assets (Spec §10)", () => {
   });
 });
 
+describe("hosted checkout page (settlement)", () => {
+  it("verifies the proof server-side, renders the negotiated price, re-mints, and expires gracefully", async () => {
+    const { app } = makeApp();
+    // A real pending deal via the negotiation flow.
+    const s = await startSession(app);
+    const r1 = await post(app, `/v1/sessions/${s.id}/messages`, { message: "$3" }, tok(s.token));
+    const ask = (await r1.json()).state.current_ask;
+    const close = await post(app, `/v1/sessions/${s.id}/accept`, undefined, tok(s.token));
+    const dealId = (await close.json()).deal_id;
+
+    // No proof on an open deal → re-mint (never dead-ends): 302 to a fresh proof URL.
+    const noProof = await app.request(`/checkout/${dealId}`);
+    expect(noProof.status).toBe(302);
+    const loc = noProof.headers.get("location")!;
+    expect(loc).toContain(`/checkout/${dealId}?proof=`);
+
+    // Following it renders the price — taken from the verified token, not the URL.
+    const page = await app.request(loc);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain(`$${ask.toFixed(2)}`);
+    expect(html).toContain(`/checkout/${dealId}/pay`);
+
+    // A tampered/garbage proof on an open deal also re-mints (graceful, no error).
+    expect((await app.request(`/checkout/${dealId}?proof=garbage`)).status).toBe(302);
+
+    // Unknown deal → friendly expired page (200, not an error dump).
+    const unknown = await app.request(`/checkout/deal_does_not_exist`);
+    expect(unknown.status).toBe(200);
+    expect((await unknown.text()).toLowerCase()).toContain("expired");
+  });
+});
+
 describe("settlement proof JWKS", () => {
   it("publishes a verifiable Ed25519 public key, no private material", async () => {
     const { app } = makeApp();

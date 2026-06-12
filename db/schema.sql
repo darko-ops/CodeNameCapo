@@ -104,10 +104,19 @@ create table if not exists bouncr.deals (
   kind                   text not null default 'initial',  -- initial|reneg_up|reneg_down
   stripe_checkout_id     text unique,
   stripe_subscription_id text,
+  payment_intent_id      text,                       -- one-time (day-pass) settlements
+  checkout_status        text not null default 'none', -- none|pending|completed|expired
+  checkout_url           text,                       -- open Stripe Checkout Session url (resume)
+  checkout_expires_at    bigint,                     -- when that session expires (ms)
   reneg_session_id       uuid,                       -- open renegotiation, if any (§6)
   created_at             bigint not null,
   settled_at             bigint
 );
+-- Idempotent adds for existing deployments.
+alter table bouncr.deals add column if not exists payment_intent_id   text;
+alter table bouncr.deals add column if not exists checkout_status     text not null default 'none';
+alter table bouncr.deals add column if not exists checkout_url        text;
+alter table bouncr.deals add column if not exists checkout_expires_at bigint;
 create index if not exists deals_session_idx on bouncr.deals(session_id);
 create index if not exists deals_checkout_idx on bouncr.deals(stripe_checkout_id);
 

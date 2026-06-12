@@ -142,6 +142,16 @@ export interface DealRecord {
   kind: DealKind;
   stripeCheckoutId: string | null;
   stripeSubscriptionId: string | null;
+  /** One-time (day-pass) settlements record the PaymentIntent instead of a sub. */
+  paymentIntentId?: string | null;
+  /** Hosted-checkout session lifecycle (Spec settlement §3): tracks the open
+   *  Stripe Checkout Session so an abandoned checkout can be resumed or re-minted
+   *  without double-charging. "none" until a session is created. */
+  checkoutStatus?: "none" | "pending" | "completed" | "expired";
+  /** The open Stripe Checkout Session URL — resume target for an abandoned tab. */
+  checkoutUrl?: string | null;
+  /** When the open Stripe Checkout Session expires (ms) — past it we re-mint. */
+  checkoutExpiresAt?: number | null;
   /** An open renegotiation session for this deal, if any (prevents duplicates). */
   renegSessionId: string | null;
   createdAt: number;
@@ -172,7 +182,19 @@ export type SessionPatch = Partial<
   Pick<SessionRecord, "round" | "currentAsk" | "status">
 >;
 export type DealPatch = Partial<
-  Pick<DealRecord, "status" | "stripeCheckoutId" | "stripeSubscriptionId" | "settledAt" | "price" | "renegSessionId">
+  Pick<
+    DealRecord,
+    | "status"
+    | "stripeCheckoutId"
+    | "stripeSubscriptionId"
+    | "paymentIntentId"
+    | "checkoutStatus"
+    | "checkoutUrl"
+    | "checkoutExpiresAt"
+    | "settledAt"
+    | "price"
+    | "renegSessionId"
+  >
 >;
 
 /** New-record inputs (the store assigns id + createdAt). */
