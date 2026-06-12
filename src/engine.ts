@@ -15,10 +15,10 @@
  *   I4.  decide() is a pure function of (state, offer, config, now) — fully
  *        deterministic and replayable. Same inputs → same Action.
  *
- * NOTE on the Appendix A sketch: this implementation fixes the concession-step
- * direction. To guarantee "never concede less than minConcession" the next ask
- * must drop by AT LEAST minConcession, i.e. `min(curve, currentAsk - minConcession)`,
- * not the `Math.max(...)` shown in the sketch. See `nextCurveAsk`.
+ * NOTE on concession sizing: each round's give is `appliedDrop` = base_band ×
+ * list_price × room_factor — a piecewise list>target>floor curve (see `roomFactor`)
+ * that is generous near list and grinds steeply below target. The endpoints
+ * (list/target/floor) and the floor invariant are never moved by this sizing.
  */
 
 // ---------------------------------------------------------------------------
@@ -73,7 +73,12 @@ export type Action =
   | { type: "counter"; amount: number; isFinal: boolean; agreed?: boolean }
   /** Repeat the standing ask (user asked a question / stalled — no number given). */
   | { type: "hold"; amount: number }
-  /** Engine ends it (expiry, or rounds exhausted with no agreement). */
+  /**
+   * Engine ends it — DEAL EXPIRY only (the timer). Rounds pace the haggle but
+   * never trigger a walk: a stubborn lowballer is met with a hold, not a quit, so
+   * Vini keeps rapport and stands on his number. Abuse-walks ("rude / verbal
+   * attack") are decided upstream in the pipeline, not here.
+   */
   | { type: "walk" };
 
 // ---------------------------------------------------------------------------
@@ -104,19 +109,6 @@ export const curveAsk = (round: number, c: Config): number =>
 export function openSession(c: Config, now: number): SessionState {
   const ask = curveAsk(0, c); // == anchor
   return { round: 0, currentAsk: ask, openedAt: now, history: [] };
-}
-
-/**
- * The next ask along the curve, but stepped down by at least minConcession and
- * never below the target (the target is the curve's destination; we only go
- * below it via offer-responsive counters, see decide()).
- */
-function nextCurveAsk(s: SessionState, c: Config): number {
-  const natural = curveAsk(s.round + 1, c);
-  const minStepped = s.currentAsk - Math.max(c.minConcession, 0);
-  // Drop by at least minConcession; clamp to the target so the *curve* never
-  // overshoots its destination.
-  return round2(Math.max(c.targetPrice, Math.min(natural, minStepped)));
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +142,106 @@ export function reachableFloor(tier: Reasoning, c: Config): number {
 }
 
 /**
+ * The give-band SCALE. A single buyer move is worth between MIN_BAND and MAX_BAND
+ * of the list price, before room_factor scales it (applied_drop below). Feel knobs.
+ */
+export const MIN_BAND = 0.02; // 2% — even a flat lowball still nudges the number
+export const MAX_BAND = 0.13; // 13% — the most a single move can ever be worth
+
+/**
+ * Special situations — a real commitment/bundle or a credible walk-away (the
+ * deal-making, hardest-to-fake moves) — add this on top of the base band. With a
+ * ~3% base that reaches the 13% ceiling. Capped at MAX_BAND so it can't run away.
+ */
+export const SPECIAL_SITUATION_BONUS = 0.1; // +10 percentage points
+
+/**
+ * Per-move base "give band" as a PERCENT of list price. Bigger move → bigger band.
+ * Sourced here from the reasoning tier as an interim mapping; the full give-band
+ * table (commitment, walk-away, flinch, …) plugs in at this seam without changing
+ * the curve math. Ordinary moves sit low (2–3%); the big gives come from the
+ * special-situation bonus, not the base. Feel knob — tune by ear.
+ *   none ≈ persistence/lowball/flattery · weak ≈ flinch/budget
+ *   moderate ≈ competitor/loyalty · strong ≈ commitment/credible-walk (special)
+ */
+export const BASE_BAND_BY_TIER: Record<Reasoning, number> = {
+  none: 0.02,
+  weak: 0.025,
+  moderate: 0.03,
+  strong: 0.03,
+};
+
+/**
+ * The effective band for a move: base band + (special bonus), clamped to the
+ * [MIN_BAND, MAX_BAND] scale. `special` marks a commitment / credible walk-away.
+ */
+export function bandFor(tier: Reasoning, special = false): number {
+  const base = BASE_BAND_BY_TIER[tier];
+  return clamp(base + (special ? SPECIAL_SITUATION_BONUS : 0), MIN_BAND, MAX_BAND);
+}
+
+/**
+ * Concession-curve feel knobs — NOT engine endpoints (list/target/floor and the
+ * floor invariant are untouched by these). They shape `roomFactor`, which scales
+ * every give as the price descends the list > target > floor ladder. All four are
+ * meant to be tuned by ear from live red-teaming.
+ */
+export const CURVE = {
+  /** Shape of the gentle upper ramp (list → target). Higher = stays generous longer up top. */
+  kHigh: 1.3,
+  /** Shape of the steep lower grind (target → floor). MUST be > kHigh: a brutal
+   *  acceleration toward the floor where only heavy stacked moves still move Vini. */
+  kLow: 2.5,
+  /** room_factor exactly AT target — the continuous handoff between the two regimes. */
+  targetBand: 0.55,
+  /** Hard minimum room_factor so even late moves still do *something*. */
+  roomFloorMin: 0.2,
+};
+
+/**
+ * Piecewise concession "room" at a given price. Continuous in VALUE at `target`
+ * (both regimes meet at `targetBand`, no jump) but with a steeper SLOPE below it
+ * — the gear-change. `target` is the inflection point, not a wall; `floor` is the
+ * only wall. Returns a factor in [roomFloorMin, 1.0]:
+ *   - at/above list → 1.0          (full wiggle, juicy)
+ *   - at target     → targetBand   (the handoff)
+ *   - near floor    → roomFloorMin (brutal; only heavy moves still bite)
+ * Pure & deterministic. Endpoints come straight from Config — this never moves them.
+ */
+export function roomFactor(price: number, c: Config): number {
+  const { kHigh, kLow, targetBand, roomFloorMin } = CURVE;
+  let rf: number;
+  if (price >= c.targetPrice) {
+    // list → target (gentle). t: 1.0 at list → 0.0 at target (clamped above list).
+    const denom = Math.max(c.listPrice - c.targetPrice, 1e-9);
+    const t = clamp((price - c.targetPrice) / denom, 0, 1);
+    rf = targetBand + (1 - targetBand) * Math.pow(t, kHigh);
+  } else {
+    // target → floor (steep). t: 1.0 at target → 0.0 at floor.
+    const denom = Math.max(c.targetPrice - c.floorPrice, 1e-9);
+    const t = clamp((price - c.floorPrice) / denom, 0, 1);
+    rf = targetBand * Math.pow(t, kLow);
+  }
+  return clamp(rf, roomFloorMin, 1);
+}
+
+/**
+ * The concession to hand over this round for a given move at a given price:
+ *   applied_drop = band(tier, special) × full_price(list) × room_factor(price)
+ * Generous near list (room ≈ 1), a token nudge near floor (room ≈ roomFloorMin),
+ * and a much bigger move in a special situation (commitment / credible walk).
+ * Always >= 0; the caller clamps the resulting price to never breach the floor.
+ */
+export function appliedDrop(
+  price: number,
+  tier: Reasoning,
+  c: Config,
+  opts: { special?: boolean } = {},
+): number {
+  return round2(bandFor(tier, opts.special ?? false) * c.listPrice * roomFactor(price, c));
+}
+
+/**
  * Decide the engine's action for one turn. Pure & deterministic.
  *
  * @param s     current session state (server-authoritative)
@@ -160,15 +252,26 @@ export function reachableFloor(tier: Reasoning, c: Config): number {
  *        Defaults to "strong" (full concession to the hard floor) so existing
  *        callers/tests are unchanged. Lower tiers unlock less of a discount, so the
  *        price can't be walked to the floor without genuinely good reasoning.
+ * @param opts.endOnRoundsExhausted  when the rounds run out with no agreement,
+ *        WALK instead of holding. Off by default: a cold-start haggle should never
+ *        rage-quit a stubborn lowballer — Vini holds his number and keeps rapport
+ *        (walking is for abuse, handled upstream). Renegotiations turn it ON so an
+ *        unresolved reprice terminates into a grandfather settlement (service §6.2)
+ *        rather than hanging open forever.
  */
 export function decide(
   s: SessionState,
   offer: number | null,
   c: Config,
   now: number,
-  opts: { reasoning?: Reasoning } = {},
+  opts: { reasoning?: Reasoning; endOnRoundsExhausted?: boolean; special?: boolean } = {},
 ): Action {
   const tier: Reasoning = opts.reasoning ?? "strong";
+  // Special situation = a deal-making move (commitment / credible walk-away) that
+  // earns the +10% band bonus. Interim: inferred from the "strong" tier; the
+  // pipeline can pass opts.special explicitly once the give-band table detects
+  // the exact move (commitment vs. a first credible walk vs. a repeat bluff).
+  const special = opts.special ?? tier === "strong";
 
   // I3: expiry is evaluated here, never trusted from the client.
   if (now - s.openedAt > c.maxDurationH * 3_600_000) return { type: "walk" };
@@ -178,9 +281,8 @@ export function decide(
   // didn't name a price. A question / stall (tier none, or unset) just holds.
   if (offer === null) {
     if (opts.reasoning && opts.reasoning !== "none") {
-      const rf = Math.max(c.floorPrice, Math.min(reachableFloor(tier, c), s.currentAsk));
-      const step = Math.max(c.minConcession, round2((s.currentAsk - rf) * 0.3));
-      const amount = round2(Math.max(rf, s.currentAsk - step));
+      const rf = Math.max(c.floorPrice, reachableFloor(tier, c));
+      const amount = round2(Math.max(rf, s.currentAsk - appliedDrop(s.currentAsk, tier, c, { special })));
       if (amount < s.currentAsk - 0.01) return { type: "counter", amount, isFinal: false };
     }
     return { type: "hold", amount: s.currentAsk };
@@ -217,50 +319,52 @@ export function decide(
     return { type: "counter", amount: round2(u), isFinal: false, agreed: true };
   }
 
-  // --- No reasoning => small goodwill room, then hold ----------------------
-  // The opening move is partly free: drift down a couple points to start the
-  // dance. But never below a SOFT FLOOR without a case — the price can't be
-  // walked down just by naming numbers. Persisting with no case runs out -> walk.
-  if (tier === "none") {
-    const a = anchor(c);
-    const softFloor = round2(Math.max(c.targetPrice, a - (a - c.targetPrice) * 0.25));
-    if (s.currentAsk > softFloor + 0.01) {
-      const step = Math.max(2, c.minConcession); // "settle a couple points"
-      const amount = round2(Math.max(softFloor, s.currentAsk - step));
-      return { type: "counter", amount, isFinal: false };
-    }
-    if (s.round >= c.maxRounds) return { type: "walk" };
-    return { type: "hold", amount: s.currentAsk };
-  }
-
-  // --- Justified (weak/moderate/strong): concede toward the tier's floor ----
+  // --- Concede as part of the dance (ALL tiers, incl. "none") ---------------
+  // Every genuine push earns a little give — the haggle is a ritual, not an
+  // adjudication. The tier sets two things, never WHETHER Vini moves:
+  //   - how FAR he can ultimately be talked: the reachable floor `rf`, and
+  //   - how BIG each give is: the move's base_band, scaled by room_factor (below).
+  // A bare number ("none") still walks him down toward the target; only a real
+  // case (moderate/strong) unlocks the stubborn target→floor grind, and nothing
+  // ever crosses `rf` (>= the hard floor — I1).
   const rf = Math.max(c.floorPrice, reachableFloor(tier, c));
-  // If the ask is already as low as this reason unlocks, hold — a better reason
-  // is needed to go lower. (Only bites for weak/moderate; strong's rf is the hard
-  // floor, so this is skipped there and the legacy behavior + invariants hold.)
+
+  // Already as low as this tier's case unlocks → hold for a better case. Bites
+  // only ABOVE the hard floor: weak/none bottom out at target, moderate at the
+  // mid-band, and a stronger argument is required to go lower. strong's rf IS the
+  // floor, so it falls through to the take-it-or-leave-it endgame, not a stall.
   if (rf > c.floorPrice && s.currentAsk <= rf + 0.01) {
-    if (s.round >= c.maxRounds - 1) return { type: "walk" };
+    // Bottomed out for this tier with no better case: hold and keep haggling —
+    // never walk on a haggler. A weak/no-case user just can't get below here.
+    // (Reneg sessions terminate-on-exhaust into a grandfather; see opts doc.)
+    if (opts.endOnRoundsExhausted && s.round >= c.maxRounds - 1) return { type: "walk" };
     return { type: "hold", amount: s.currentAsk };
   }
 
   // --- Final round: take-it-or-leave-it -----------------------------------
-  // I2 still holds: finalAsk <= currentAsk.
+  // One more room_factor-sized give, marked final — same curve as any other round
+  // (no dramatic cliff that would erase the move's weight). I2 holds: finalAsk <= currentAsk.
   if (s.round >= c.maxRounds - 1) {
-    const finalAsk = round2(clamp(Math.max(rf, nextCurveAsk(s, c)), rf, s.currentAsk));
+    const finalAsk = round2(Math.max(rf, s.currentAsk - appliedDrop(s.currentAsk, tier, c, { special })));
     if (u >= finalAsk) return accept(Math.max(u, c.floorPrice), c);
-    if (s.round >= c.maxRounds) return { type: "walk" };
+    // Rounds pace the concession curve; they are NOT a hard exit. The first time
+    // we hit the limit Vini makes his "final offer" (isFinal); after that he just
+    // HOLDS on that number, round after round — standing firm but keeping the door
+    // open and the rapport intact. He does not walk on a stubborn haggler. (Walks
+    // are abuse-only, in the pipeline, plus deal expiry above.) Reneg sessions opt
+    // into a terminal walk so an unresolved reprice grandfathers (service §6.2).
+    if (s.round >= c.maxRounds)
+      return opts.endOnRoundsExhausted ? { type: "walk" } : { type: "hold", amount: s.currentAsk };
     return { type: "counter", amount: finalAsk, isFinal: true };
   }
 
-  // --- Ordinary counter: split the difference, biased toward our ask -------
-  // Bias 0.7 toward our side, softening slightly per round but never past the
-  // true midpoint. Pure midpoint converges too fast and trains lowballing.
-  // Clamped to the tier's reachable floor so reasoning quality bounds the discount.
-  const ourSide = Math.min(curveAsk(s.round + 1, c), s.currentAsk);
-  const bias = Math.max(0.5, 0.7 - 0.02 * s.round);
-  const raw = bias * ourSide + (1 - bias) * u;
-  const upper = Math.max(rf, s.currentAsk - c.minConcession);
-  const amount = round2(clamp(raw, rf, upper));
+  // --- Ordinary counter: applied_drop = base_band × full_price × room_factor --
+  // room_factor is the piecewise list>target>floor curve: gentle wiggle up near
+  // list, a steep grind below target. So the SAME move gives a juicy drop early
+  // and a token nudge near the bottom, with the resistance concentrated in the
+  // target→floor zone — and the give still never crosses `rf` (>= floor, I1/I2).
+  // The user's lowball number doesn't drag the counter down; persistence does.
+  const amount = round2(Math.max(rf, s.currentAsk - appliedDrop(s.currentAsk, tier, c, { special })));
   return { type: "counter", amount, isFinal: false };
 }
 

@@ -10,6 +10,7 @@
 import type { Config } from "../engine.js";
 import type { Persona, Extraction } from "../llm/types.js";
 import type { Action } from "../engine.js";
+import type { DiscoveryConfig } from "../llm/discovery.js";
 
 export type SessionStatus = "open" | "accepted" | "walked" | "expired" | "settled";
 export type DealStatus = "pending" | "settled" | "canceled";
@@ -74,6 +75,11 @@ export interface Plan {
   persona: Persona;
   policy: NegotiationPolicy;
   usage: UsagePolicy;
+  /**
+   * Merchant-configurable discovery question set the RENDERER consumes (Discovery
+   * Phase Data Policy). Off/absent → no discovery woven in. Never feeds the engine.
+   */
+  discovery?: DiscoveryConfig;
   /** Versioned (Spec §8): a deal records the config version it closed under. */
   version: number;
   active: boolean;
@@ -93,6 +99,8 @@ export interface PlanUpdate {
   applicationFeePercent: number | null;
   active: boolean;
   version: number;
+  /** Merchant Vini/discovery config (renderer-only). null clears it. */
+  discovery: DiscoveryConfig | null;
 }
 
 export interface SessionRecord {

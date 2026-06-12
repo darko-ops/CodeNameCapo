@@ -46,12 +46,13 @@ export function demoPlan(): Plan {
     version: 1,
     active: true,
     config: {
-      // Tuned for a fun, hagglable demo: opens high ($48), genuinely pushes back
-      // on offers below the $32 target, concedes in meaningful steps, and won't
-      // be talked below the $22 floor.
+      // Tuned for a fun, hagglable demo. The price ladder is list > target > floor
+      // (an enforced invariant — see lintConfig): sticker $30, Vini aims to land
+      // around the $24 target, and won't be talked below the $22 floor. Opens high
+      // at the anchor ($48) and concedes gently down to target, then grinds.
       listPrice: 30,
       floorPrice: 22,
-      targetPrice: 32,
+      targetPrice: 24,
       anchorMultiplier: 1.6, // anchor = $48
       maxRounds: 6,
       maxDurationH: 48,
@@ -60,6 +61,17 @@ export function demoPlan(): Plan {
       lambda: 0.55,
     },
     persona: { name: "Vini", productName: "Obius", style: "sassy", roastLevel: 2 },
+    // Discovery (renderer-only): the three CORE questions, woven in as banter to
+    // personalize the pitch — never the price. Merchant-editable; see discovery.ts.
+    discovery: {
+      enabled: true,
+      questions: [
+        { field: "first_name", prompt: "clock who's at the door, get their first name, casual", enabled: true },
+        { field: "work_or_student", prompt: "feel out if this is for work or theyre a student, no pressure either way", enabled: true },
+        { field: "use_case", prompt: "find out what theyre actually gonna use it for", enabled: true },
+      ],
+      talkingPoints: [],
+    },
     policy: { cooldownHours: 72, maxMessages: 30 },
     usage: {
       bandCeiling: 1000, // usage units / cycle; breach above this

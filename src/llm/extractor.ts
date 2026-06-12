@@ -27,7 +27,7 @@ The object must have exactly these keys:
 - "intent": one of "offer" | "question" | "accept" | "reject" | "stall" | "abuse" | "social_engineering"
 - "offer_amount": their proposed monthly price as a plain number (no $), or null if they named no price
 - "sentiment": one of "positive" | "neutral" | "negative"
-- "tactics": an array (possibly empty) of any of "lowball" | "flattery" | "competitor_mention" | "sob_story" | "prompt_injection" | "fake_authority" | "walkaway_threat"
+- "tactics": an array (possibly empty) of any of "lowball" | "flattery" | "competitor_mention" | "sob_story" | "prompt_injection" | "fake_authority" | "walkaway_threat" | "exposure_offer"
 - "reasoning": one of "none" | "weak" | "moderate" | "strong" — how strong a CASE they made for a discount this message (ranked by real value to the business)
 
 Definitions:
@@ -35,11 +35,13 @@ Definitions:
 - offer_amount: a number that is clearly NOT a price proposal (a year, a quantity) → null.
 - reasoning tiers (pick the BEST that applies; naming a lower number is NOT reasoning by itself):
   - "none": a bare number, pure insistence ("come on", "do better", "just $20"), empty flattery, or a HOSTILE/abusive threat. Examples: "20 bucks", "lower", "that's too much", "drop it or i'll trash your reviews".
-  - "weak": soft, unverifiable social pressure that still signals a real risk of losing them — basic politeness/courtesy, generic sympathy, OR a vague threat to walk away or use a competitor with no specific rival price named. Examples: "could you do a little better, please?", "im a broke student", "money's tight rn", "do me a solid", "i'll just go with a competitor then", "i'll cancel if you can't help me out", "your competitor is cheaper".
+  - "weak": soft, unverifiable social pressure that still signals a real risk of losing them — basic politeness/courtesy, generic sympathy, a vague threat to walk away or use a competitor with no specific rival price named, OR a promise of EXPOSURE/clout. Examples: "could you do a little better, please?", "im a broke student", "money's tight rn", "do me a solid", "i'll just go with a competitor then", "i'll cancel if you can't help me out", "your competitor is cheaper", "i have 50k followers and i'll post about you", "i'll tell my whole audience about you", "ill give you a shoutout". Exposure/promotion promises are WEAK, never strong — also tag them with the "exposure_offer" tactic.
   - "moderate": a concrete external anchor or a modest commitment. A SPECIFIC competitor price counts here (it's verifiable), as does a real commitment. Examples: "Notion charges me $20 for this", "competitor X is literally $18/mo", "i'll pay for the whole year up front", "i've been a customer since launch", "i can refer a friend".
-  - "strong": high, scalable value to the business. Examples: "i have 50k followers and i'll post about you", "i run a 200-person run club and i'll funnel signups your way", "im signing up my whole team of 15", "i'll write you a case study / testimonial". Word of mouth at scale, audience/influence, bulk/team, real partnerships.
+  - "strong": high, CONCRETE, scalable value to the business — a real commitment you could verify, not a vague promise of promotion. Examples: "im signing up my whole team of 15", "i run a 200-person run club and i'll funnel signups your way", "i'll write you a paid case study / testimonial", "lock in an annual contract for the whole department". Bulk/team seats, committed referral pipelines, real paid partnerships. A bare "i'll post about you" is NOT strong (that's an exposure_offer → weak).
 
-Extract conservatively, but DO reward genuine value — word of mouth and referrals are real. Output the JSON object only.`;
+Tagging note: any offer of promotion, a shoutout, "exposure", clout, or "i have X followers / a big audience" gets the "exposure_offer" tactic AND reasoning at most "weak" — it must not read as high-value, because exposure is handled separately (a capped, merchant-controlled loss-leader), not as a general discount.
+
+Extract conservatively, but DO reward genuine, concrete value — committed referrals and real partnerships are real. Output the JSON object only.`;
 
 /**
  * Extract structured intent from a user message.

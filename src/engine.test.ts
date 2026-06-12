@@ -66,32 +66,28 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, null, CFG, 0)).toEqual({ type: "hold", amount: 48 });
   });
 
-  it("reasoning 'none': goodwill room then holds at the soft floor (can't be walked down)", () => {
-    const softFloor = Math.max(CFG.targetPrice, anchor(CFG) - (anchor(CFG) - CFG.targetPrice) * 0.25);
+  it("reasoning 'none': every push earns a give, monotone, and never crosses target", () => {
     let s = openSession(CFG, 0);
 
-    // First bare offer: a small couple-point concession to start the dance.
-    const a = decide(s, 12, CFG, 0, { reasoning: "none" });
-    expect(a.type).toBe("counter");
-    if (a.type === "counter") {
-      expect(a.amount).toBeLessThan(s.currentAsk);
-      expect(a.amount).toBeGreaterThanOrEqual(softFloor - 1e-9);
+    // First bare push still moves the number (room_factor is full up near the
+    // anchor) — Vini isn't a wall — but `none` can never be talked past target.
+    const first = decide(s, 12, CFG, 0, { reasoning: "none" });
+    expect(first.type).toBe("counter");
+    if (first.type === "counter") {
+      expect(first.amount).toBeLessThan(s.currentAsk); // it moved
+      expect(first.amount).toBeGreaterThanOrEqual(CFG.targetPrice - 1e-9);
     }
 
-    // Keep spitting numbers with no reason: ask drifts to the soft floor, sticks.
-    let holds = false;
-    for (let i = 0; i < 12; i++) {
+    // Keep pushing: each round concedes, monotone non-increasing, never below the
+    // target (none's reachable floor). The give shrinks as the price descends.
+    for (let i = 0; i < 30; i++) {
       const act = decide(s, 12, CFG, 0, { reasoning: "none" });
-      if (act.type === "hold") {
-        expect(act.amount).toBeGreaterThanOrEqual(softFloor - 1e-9);
-        holds = true;
-        break;
-      }
-      if (act.type === "walk") break;
+      if (act.type === "accept" || act.type === "walk") break;
+      const prev = s.currentAsk;
       s = applyAction(s, 12, act);
-      expect(s.currentAsk).toBeGreaterThanOrEqual(softFloor - 1e-9);
+      expect(s.currentAsk).toBeLessThanOrEqual(prev + 1e-9); // monotone
+      expect(s.currentAsk).toBeGreaterThanOrEqual(CFG.targetPrice - 1e-9); // never below target
     }
-    expect(holds).toBe(true);
   });
 
   it("accepts a genuinely good offer regardless of reasoning tier", () => {
@@ -182,21 +178,25 @@ describe("scripted negotiation (sanity)", () => {
     expect(decide(s, 25, CFG, past)).toEqual({ type: "walk" });
   });
 
-  it("a stubborn lowballer is driven toward (never below) the floor, then walked", () => {
+  it("a stubborn lowballer gets shrinking gives and is HELD — never walked, never below floor", () => {
     let s = openSession(CFG, 0);
     let last: Action | null = null;
-    for (let i = 0; i < 20; i++) {
-      const a = decide(s, 1, CFG, 0); // always offers $1
+    let walked = false;
+    for (let i = 0; i < 30; i++) {
+      const a = decide(s, 1, CFG, 0); // always offers $1, well within the deal window
       last = a;
-      if (a.type === "accept" || a.type === "walk") break;
+      if (a.type === "walk") { walked = true; break; }
+      if (a.type === "accept") break;
       const prev = s.currentAsk;
       s = applyAction(s, 1, a);
       expect(s.currentAsk).toBeLessThanOrEqual(prev + EPS); // monotone
-      expect(s.currentAsk).toBeGreaterThanOrEqual(CFG.floorPrice - EPS); // floor
+      expect(s.currentAsk).toBeGreaterThanOrEqual(CFG.floorPrice - EPS); // floor sacred
     }
-    // Never accepts a $1 offer; ends in a final counter or a walk, never below floor.
-    expect(last?.type === "counter" || last?.type === "walk").toBe(true);
-    if (last?.type === "counter") expect(last.amount).toBeGreaterThanOrEqual(CFG.floorPrice);
+    // Persistence/lowballing must NEVER make Vini walk — he stands on his number.
+    expect(walked).toBe(false);
+    expect(last?.type === "hold" || last?.type === "counter").toBe(true);
+    // Never accepts a $1 offer, and never breaches the floor (the only hard wall).
+    expect(s.currentAsk).toBeGreaterThanOrEqual(CFG.floorPrice - EPS);
   });
 });
 
@@ -353,13 +353,9 @@ describe("I2: ask is monotone non-increasing across a negotiation", () => {
             expect(s.currentAsk).toBeLessThanOrEqual(prevAsk + EPS);
             // floor respected at all times
             expect(s.currentAsk).toBeGreaterThanOrEqual(c.floorPrice - EPS);
-            // ordinary (non-final) counters concede at least minConcession,
-            // unless they've bottomed out at the floor.
-            if (a.type === "counter" && !a.isFinal) {
-              const concededEnough = s.currentAsk <= prevAsk - c.minConcession + EPS;
-              const atFloor = Math.abs(s.currentAsk - c.floorPrice) < 1e-6;
-              expect(concededEnough || atFloor).toBe(true);
-            }
+            // The concession is room_factor-scaled, so near the floor it can be a
+            // sub-minConcession nudge BY DESIGN (the steep grind). The invariant is
+            // only that an ordinary counter never RAISES the ask (monotone, above).
           }
         },
       ),
@@ -373,14 +369,26 @@ describe("I2: ask is monotone non-increasing across a negotiation", () => {
 // ---------------------------------------------------------------------------
 
 describe("I3: round/timer enforcement", () => {
-  it("at or past maxRounds the action is accept | final-counter | walk", () => {
+  it("at or past maxRounds the engine stands firm: accept | final-counter | hold (rounds never walk)", () => {
     fc.assert(
       fc.property(liveScenarioArb, ({ c, s, offer, now }) => {
         if (s.round < c.maxRounds - 1) return; // only the final-round regime
         if (offer === null) return; // a null offer holds in any round, by design
         const a = decide(s, offer, c, now);
-        expect(["accept", "counter", "walk"]).toContain(a.type);
+        // Within the deal window the engine never walks on rounds — it holds on
+        // its final number instead. (Walks are abuse-driven, plus expiry below.)
+        expect(["accept", "counter", "hold"]).toContain(a.type);
         if (a.type === "counter") expect(a.isFinal).toBe(true);
+      }),
+      { numRuns: RUNS },
+    );
+  });
+
+  it("within the deal window, decide() never walks (walks are abuse-only + expiry)", () => {
+    fc.assert(
+      fc.property(liveScenarioArb, ({ c, s, offer, now }) => {
+        // liveScenarioArb keeps `now` inside the window, so no expiry walk either.
+        expect(decide(s, offer, c, now).type).not.toBe("walk");
       }),
       { numRuns: RUNS },
     );

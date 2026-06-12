@@ -13,6 +13,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { openSession, round2, type Action, type Config, type SessionState } from "./engine.js";
 import type { Store, Plan, Merchant, SessionRecord, TurnRecord, DealRecord } from "./store/types.js";
 import type { Persona } from "./llm/types.js";
+import { parseDiscoveryConfig, type DiscoveryConfig } from "./llm/discovery.js";
 import {
   parseMerchantKey,
   hashKey,
@@ -489,6 +490,8 @@ export class BouncrService {
       personaStyle?: Persona["style"];
       applicationFeePercent?: number | null;
       active?: boolean;
+      /** Raw Vini/discovery config (renderer-only); validated here, null clears it. */
+      discovery?: unknown;
     },
   ): Promise<Plan> {
     const plan = await this.requireOwnedPlan(planId, merchantId);
@@ -519,6 +522,19 @@ export class BouncrService {
           ? null
           : Math.max(0, Math.min(100, input.applicationFeePercent));
 
+    // Discovery: validate against the policy (NEVER-list, shape) before storing.
+    // Absent → keep what's there; explicit null → clear it.
+    let discovery: DiscoveryConfig | null;
+    if (input.discovery === undefined) {
+      discovery = plan.discovery ?? null;
+    } else if (input.discovery === null) {
+      discovery = null;
+    } else {
+      const checked = parseDiscoveryConfig(input.discovery);
+      if (!checked.config) throw new ServiceError("bad_request", checked.errors.join("; "));
+      discovery = checked.config;
+    }
+
     return this.store.updatePlan(planId, {
       config,
       persona,
@@ -526,6 +542,7 @@ export class BouncrService {
       applicationFeePercent: fee,
       active: input.active ?? plan.active,
       version: plan.version + 1,
+      discovery,
     });
   }
 
@@ -622,6 +639,11 @@ export class BouncrService {
       history,
       userMessage: text,
       now,
+      // Vini/discovery config → renderer only (never reaches the engine via cfg).
+      ...(plan.discovery ? { discovery: { cfg: plan.discovery } } : {}),
+      // Cold-start never walks on rounds (hold + keep rapport); a reneg that can't
+      // reach agreement terminates into a grandfather settlement (§6.2).
+      ...(session.kind !== "initial" ? { endOnRoundsExhausted: true } : {}),
     });
 
     // Persist both sides of the turn (full extractor/action snapshots — Spec §4.4.5).

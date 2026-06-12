@@ -25,6 +25,12 @@ describe("lintConfig (Spec §12)", () => {
     expect(r.errors.join(" ")).toMatch(/targetPrice/);
   });
 
+  it("rejects an inverted ladder (target >= list) — the old demo bug", () => {
+    const r = lintConfig({ ...base(), listPrice: 30, targetPrice: 32 });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/listPrice/); // ladder is list > target > floor
+  });
+
   it("errors when the anchor has no room above target", () => {
     // list 20 × 1.0 = 20 anchor, target 22 → anchor below target
     const r = lintConfig({ ...base(), listPrice: 20, anchorMultiplier: 1, targetPrice: 22 });

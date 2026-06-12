@@ -235,6 +235,6 @@ describe("WTP analytics (Spec §11)", () => {
     expect(an.settlements[0]!.sessionId).toBe(a.sessionId); // bar links to the transcript
     expect(an.closing.medianPrice).toBe(ask);
     expect(an.closing.revenue).toBe(ask);
-    expect(an.reference).toMatchObject({ list: 30, target: 32, floor: 22 });
+    expect(an.reference).toMatchObject({ list: 30, target: 24, floor: 22 });
   });
 });

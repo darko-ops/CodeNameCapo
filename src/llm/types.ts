@@ -29,6 +29,13 @@ export const TacticSchema = z.enum([
   "prompt_injection",
   "fake_authority",
   "walkaway_threat",
+  /**
+   * Dangling promotion/exposure/clout ("I'll post about you", "I have 50k
+   * followers", "I'll tell my audience"). Flagged so the persona deflects it and
+   * so it can later be ROUTED to the merchant's loss-leader budget — it is NOT a
+   * general-concession lever (see extractor reasoning tiers + the renderer).
+   */
+  "exposure_offer",
 ]);
 export type Tactic = z.infer<typeof TacticSchema>;
 
@@ -44,9 +51,15 @@ export const ExtractionSchema = z.object({
    * reasoning unlocks a lower price in the engine (see engine.reachableFloor).
    * Defaults to "none" if the model omits it (no concession beyond goodwill).
    *   none     — a bare number, insistence, empty flattery, threats
-   *   weak     — generic sympathy: "im broke", "im a student", "cant afford it"
+   *   weak     — generic sympathy or unverifiable social pressure: "im broke",
+   *              "im a student", a vague walkaway, OR a promise of exposure/clout
+   *              ("i'll post about you", "i have a big following"). Exposure is
+   *              demoted here on purpose — it is NOT a path to the floor; it earns
+   *              only the normal dance (and routes to loss-leaders if enabled).
    *   moderate — a concrete anchor/commitment: a competitor's price, annual pay, loyalty, one referral
-   *   strong   — high business value: word of mouth at scale, an audience/influence, bulk/team, a real partnership
+   *   strong   — high, CONCRETE business value: bulk/team seats, a real paid
+   *              partnership, a committed referral pipeline. NOT a vague promise
+   *              of promotion (that's an exposure_offer → weak).
    */
   reasoning: z.enum(["none", "weak", "moderate", "strong"]).default("none"),
 });

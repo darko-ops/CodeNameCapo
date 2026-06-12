@@ -94,6 +94,26 @@
   form select { cursor:pointer; }
   .hr { border:0; border-top:1px solid var(--line); margin:20px 0 16px; }
 
+  /* Vini config page */
+  #view-vini textarea, #view-vini select, #v-questions input[type=text] { width:100%; box-sizing:border-box; background:#0e0e14; border:1px solid var(--line); border-radius:9px; padding:10px 11px; font:inherit; color:var(--text); resize:vertical; }
+  #view-vini textarea:focus, #view-vini select:focus, #v-questions input[type=text]:focus { outline:none; border-color:var(--accent); }
+  #view-vini select { cursor:pointer; resize:none; }
+  #view-vini .vfield label { display:block; font-size:11.5px; color:var(--muted); margin:0 0 5px; }
+  .vq { display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
+  .vq:first-child { border-top:0; }
+  .vq > input[type=checkbox] { margin-top:4px; width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
+  .vq .vq-body { flex:1; min-width:0; }
+  .vq .vq-head { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .vq .vq-name { font-weight:600; }
+  .vq .vq-tag { font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:rgba(124,58,237,.16); color:var(--accent2); }
+  .vq .vq-tag.cond { background:rgba(251,191,36,.14); color:var(--warn); }
+  .vq .vq-hint { font-size:12.5px; color:var(--muted); margin:2px 0 8px; }
+  .vq[data-off=true] .vq-body { opacity:.5; }
+  .never-list .nv { display:flex; gap:10px; padding:11px 0; border-top:1px solid var(--line); }
+  .never-list .nv:first-child { border-top:0; }
+  .never-list .nv .x { color:var(--err); font-weight:800; flex:0 0 auto; }
+  .never-list .nv .nv-why { font-size:12.5px; color:var(--muted); }
+
   /* keybox */
   .keybox { background:#0d0d13; border:1px solid rgba(124,58,237,.4); border-radius:11px; padding:14px; font-family:ui-monospace,Menlo,monospace; font-size:13px; }
   .keybox .keyval { word-break:break-all; line-height:1.55; }
@@ -146,6 +166,7 @@
     <span id="status" class="meta"></span>
     <button class="icon" id="refresh" title="Refresh">⟳</button>
     <span class="who-chip" id="who"></span>
+    <button class="ghost sm" id="vini-toggle">Vini</button>
     <button class="ghost sm" id="settings-toggle">Settings</button>
     <button class="ghost sm" id="logout">Log out</button>
   </header>
@@ -182,9 +203,6 @@
         <form id="edit-form">
           <div class="frow">
             <div><label>Product name</label><input id="e-product" /></div>
-            <div><label>Vini's personality</label>
-              <select id="e-style"><option value="sassy">Sassy</option><option value="playful">Playful</option><option value="deadpan">Deadpan</option><option value="professional">Professional</option></select>
-            </div>
           </div>
           <div class="frow">
             <div><label>List $/mo</label><input id="e-list" type="number" min="1" step="0.01" /></div>
@@ -252,6 +270,46 @@
         <span class="meta" id="delete-status"></span>
       </div>
     </section>
+
+    <!-- VINI -->
+    <section id="view-vini" hidden>
+      <div class="seclabel">Vini</div>
+      <div class="card">
+        <h3 style="margin-top:0">Configure Vini for this plan</h3>
+        <p class="meta" style="margin:0 0 4px">Vini chats with your customers to make the case for the price. Everything here shapes <b>how Vini argues</b> — never the number. The anchor, target, and floor stay exactly what you set under Settings and are identical for every customer.</p>
+        <div class="vfield" style="max-width:280px; margin-top:16px">
+          <label>Vini's personality</label>
+          <select id="v-style"><option value="sassy">Sassy</option><option value="playful">Playful</option><option value="deadpan">Deadpan</option><option value="professional">Professional</option></select>
+        </div>
+        <label class="row-line" style="margin-top:18px; cursor:pointer">
+          <input type="checkbox" id="v-enabled" style="width:auto" /> &nbsp;Let Vini get to know customers (discovery on)
+        </label>
+      </div>
+
+      <div class="seclabel">Things to ask for</div>
+      <div class="card">
+        <p class="meta" style="margin:0 0 12px">2–3 light questions, woven into banter — not a survey. Toggle the ones Vini may ask and tweak how it sounds. Conditional ones are off by default; only turn them on if they fit your product.</p>
+        <div id="v-questions"></div>
+      </div>
+
+      <div class="seclabel">Things to mention</div>
+      <div class="card">
+        <p class="meta" style="margin:0 0 10px">Talking points Vini can bring up to argue the price is worth it — your value props, in your words. One per line. Vini uses what fits, naturally.</p>
+        <textarea id="v-points" rows="5" placeholder="ships with priority support&#10;cancel anytime, no lock-in&#10;the team plan pays for itself in a week"></textarea>
+      </div>
+
+      <div class="seclabel">Things Vini will never bring up</div>
+      <div class="card">
+        <p class="meta" style="margin:0 0 12px">Hard prohibitions from the Bouncr data policy — fixed, and not editable. These keep pricing fair and keep you out of privacy/discrimination trouble. Vini never asks for or leans on any of these, and none of them can move the price.</p>
+        <div id="v-never" class="never-list"></div>
+      </div>
+
+      <div class="row-line" style="margin:4px 0 40px">
+        <button type="button" id="v-save">Save Vini</button>
+        <span class="meta" id="v-status"></span>
+        <span class="lint err" id="v-err"></span>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -276,14 +334,16 @@
 
   // --- views ---------------------------------------------------------------
   function setView(v) {
-    const settings = v === "settings";
-    $("view-overview").hidden = settings;
-    $("view-settings").hidden = !settings;
-    $("settings-toggle").textContent = settings ? "← Overview" : "Settings";
-    if (!settings && LAST_A) renderHist(LAST_A); // canvas needs to be visible to size
+    $("view-overview").hidden = v !== "overview";
+    $("view-settings").hidden = v !== "settings";
+    $("view-vini").hidden = v !== "vini";
+    $("settings-toggle").textContent = v === "settings" ? "← Overview" : "Settings";
+    $("vini-toggle").textContent = v === "vini" ? "← Overview" : "Vini";
+    if (v === "overview" && LAST_A) renderHist(LAST_A); // canvas needs to be visible to size
     window.scrollTo(0, 0);
   }
   $("settings-toggle").onclick = () => setView($("view-settings").hidden ? "settings" : "overview");
+  $("vini-toggle").onclick = () => setView($("view-vini").hidden ? "vini" : "overview");
 
   // --- auth ----------------------------------------------------------------
   function showAuthed(name) {
@@ -389,6 +449,7 @@
       const last = localStorage.getItem("bouncr_dash_plan");
       if (last && plans.some((p) => p.id === last)) sel.value = last;
       fillEdit(sel.value);
+      fillVini(sel.value);
       return true;
     } catch (_) { return false; }
   }
@@ -396,7 +457,6 @@
   function fillEdit(id) {
     const p = PLANS.find((x) => x.id === id); if (!p) return;
     $("e-product").value = (p.persona && p.persona.product_name) || "";
-    $("e-style").value = (p.persona && p.persona.style) || "sassy";
     $("e-list").value = p.list_price; $("e-floor").value = p.floor_price; $("e-target").value = p.target_price;
     $("e-fee").value = p.application_fee_percent == null ? "" : p.application_fee_percent;
     const tg = $("toggle-active");
@@ -424,7 +484,7 @@
     $("edit-err").textContent = ""; $("edit-status").textContent = "saving…";
     const numv = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : null; };
     const feeRaw = $("e-fee").value.trim();
-    const body = { product_name: $("e-product").value.trim(), persona_style: $("e-style").value, list_price: numv("e-list"), floor_price: numv("e-floor"), target_price: numv("e-target"), application_fee_percent: feeRaw === "" ? null : parseFloat(feeRaw) };
+    const body = { product_name: $("e-product").value.trim(), list_price: numv("e-list"), floor_price: numv("e-floor"), target_price: numv("e-target"), application_fee_percent: feeRaw === "" ? null : parseFloat(feeRaw) };
     try {
       const r = guard(await fetch(base() + "/v1/plans/" + encodeURIComponent($("plan").value), { method: "PATCH", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(body) }));
       const d = await r.json(); if (!r.ok) throw new Error(d.error || "could not save");
@@ -433,12 +493,83 @@
     } catch (err) { $("edit-status").textContent = ""; $("edit-err").textContent = err.message; }
   });
 
+  // --- Vini config ---------------------------------------------------------
+  const VINI_FIELDS = [
+    { key: "first_name", name: "First name", tier: "core", hint: "Rapport, not leverage — lets Vini address them directly so the persona lands harder.", ph: "clock who's at the door, get their first name, casual" },
+    { key: "work_or_student", name: "Work or student", tier: "core", hint: "Highest-leverage angle: a business expense that pays for itself vs cutting a student a break.", ph: "feel out if this is for work or theyre a student, no pressure" },
+    { key: "use_case", name: "What they'll use it for", tier: "core", hint: "Value anchor — ties the case for the price to what they actually get out of it.", ph: "find out what theyre actually gonna use it for" },
+    { key: "currently_pays", name: "What they pay now for similar", tier: "cond", hint: "Their own volunteered number, turned around as the anchor. Best as cocky banter, never a form.", ph: "what're you paying now? let me guess, too much" },
+    { key: "team_seats", name: "Team size / seats", tier: "cond", hint: "Only worth it if your product is team-shaped. Skip for solo-consumer.", ph: "solo or you got a team rolling with you?" },
+    { key: "region", name: "Region / currency", tier: "cond", hint: "Currency/config only — never a read on what they can afford.", ph: "where you pulling up from?" },
+  ];
+  const NEVER_LIST = [
+    { t: "Income, budget, salary, or “how much can you spend”", w: "Anchors price to ability-to-pay — that's price discrimination." },
+    { t: "Company size used as a wealth proxy", w: "The same discrimination trap wearing a B2B costume." },
+    { t: "Anything inferred — email contents, LinkedIn, socials, enrichment, device/IP", w: "Discovery is volunteered-only; inference is a privacy/GDPR liability you didn't choose." },
+    { t: "Protected attributes — race, gender, age, health, religion", w: "A legal and ethical landmine, never relevant to a price." },
+    { t: "How often they'll use it (usage frequency)", w: "Invites the customer to self-report low usage to argue the price down." },
+    { t: "Anything that changes the number Vini charges", w: "Discovery personalizes the pitch, never the price." },
+  ];
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  function buildViniStatic() {
+    $("v-questions").innerHTML = VINI_FIELDS.map((f) => `
+      <div class="vq" id="vq-${f.key}" data-off="true">
+        <input type="checkbox" id="vq-en-${f.key}" />
+        <div class="vq-body">
+          <div class="vq-head"><span class="vq-name">${esc(f.name)}</span><span class="vq-tag ${f.tier === 'cond' ? 'cond' : ''}">${f.tier === 'cond' ? 'conditional' : 'core'}</span></div>
+          <div class="vq-hint">${esc(f.hint)}</div>
+          <input type="text" id="vq-pr-${f.key}" placeholder="${esc(f.ph)}" />
+        </div>
+      </div>`).join("");
+    for (const f of VINI_FIELDS) {
+      $("vq-en-" + f.key).onchange = () => { $("vq-" + f.key).dataset.off = String(!$("vq-en-" + f.key).checked); };
+    }
+    $("v-never").innerHTML = NEVER_LIST.map((n) => `<div class="nv"><span class="x">✕</span><div><div>${esc(n.t)}</div><div class="nv-why">${esc(n.w)}</div></div></div>`).join("");
+  }
+
+  function fillVini(id) {
+    const p = PLANS.find((x) => x.id === id); if (!p) return;
+    $("v-style").value = (p.persona && p.persona.style) || "sassy";
+    const d = p.discovery || { enabled: true, questions: [], talkingPoints: [] };
+    $("v-enabled").checked = d.enabled !== false;
+    const byField = {}; (d.questions || []).forEach((q) => { byField[q.field] = q; });
+    for (const f of VINI_FIELDS) {
+      const q = byField[f.key];
+      const on = !!q && q.enabled !== false;
+      $("vq-en-" + f.key).checked = on;
+      $("vq-" + f.key).dataset.off = String(!on);
+      $("vq-pr-" + f.key).value = q && q.prompt ? q.prompt : "";
+    }
+    $("v-points").value = (d.talkingPoints || []).join("\n");
+    $("v-status").textContent = ""; $("v-err").textContent = "";
+  }
+
+  $("v-save").onclick = async () => {
+    $("v-err").textContent = ""; $("v-status").textContent = "saving…";
+    const questions = [];
+    for (const f of VINI_FIELDS) {
+      const prompt = $("vq-pr-" + f.key).value.trim();
+      const enabled = $("vq-en-" + f.key).checked;
+      if (enabled || prompt) questions.push({ field: f.key, prompt: prompt || f.ph, enabled });
+    }
+    const talkingPoints = $("v-points").value.split("\n").map((s) => s.trim()).filter(Boolean);
+    const discovery = { enabled: $("v-enabled").checked, questions, talkingPoints };
+    try {
+      const r = guard(await fetch(base() + "/v1/plans/" + encodeURIComponent($("plan").value), { method: "PATCH", headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify({ discovery, persona_style: $("v-style").value }) }));
+      const dd = await r.json(); if (!r.ok) throw new Error(dd.error || "could not save");
+      $("v-status").textContent = "saved ✓";
+      const keep = dd.plan.id; await loadPlans(); $("plan").value = keep; fillEdit(keep); fillVini(keep);
+    } catch (err) { $("v-status").textContent = ""; $("v-err").textContent = err.message; }
+  };
+
   async function enter() {
+    buildViniStatic();
     const has = await loadPlans();
     if (has) load();
     else { $("closing").innerHTML = ""; $("funnel").innerHTML = ""; $("sessions").innerHTML = ""; $("status").textContent = ""; }
   }
-  $("plan").onchange = () => { localStorage.setItem("bouncr_dash_plan", $("plan").value); fillEdit($("plan").value); load(); };
+  $("plan").onchange = () => { localStorage.setItem("bouncr_dash_plan", $("plan").value); fillEdit($("plan").value); fillVini($("plan").value); load(); };
 
   // --- render --------------------------------------------------------------
   const kpi = (label, value, cls) => `<div class="kpi ${cls || ""}"><h4>${label}</h4><div class="big">${value}</div></div>`;

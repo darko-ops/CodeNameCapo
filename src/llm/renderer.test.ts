@@ -1,7 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { stripFormatting, template } from "./renderer.js";
+import { stripFormatting, template, ordinaryCounterLine } from "./renderer.js";
 import { validate } from "./validator.js";
 import type { Action } from "../engine.js";
+import type { Extraction } from "./types.js";
+
+const extr = (over: Partial<Extraction> = {}): Extraction => ({
+  intent: "offer",
+  offer_amount: 20,
+  sentiment: "neutral",
+  tactics: [],
+  reasoning: "none",
+  ...over,
+});
 
 const PERSONA = { name: "Vini", productName: "Obius", style: "deadpan", roastLevel: 2 } as any;
 
@@ -47,6 +57,34 @@ describe("no em dashes (a dead AI tell)", () => {
       { type: "walk" },
     ];
     for (const a of actions) expect(template(a, PERSONA)).not.toMatch(/[—–]/);
+  });
+});
+
+describe("ordinaryCounterLine — tone by what the user brought", () => {
+  it("states the engine's amount and never a different dollar figure", () => {
+    for (const tier of ["none", "weak", "moderate", "strong"] as const) {
+      const line = ordinaryCounterLine(31, extr({ reasoning: tier, tactics: tier === "weak" ? ["exposure_offer"] : [] }));
+      const dollars = [...line.matchAll(/\$(\d+(?:\.\d+)?)/g)].map((m) => m[1]);
+      expect(dollars.length, tier).toBeGreaterThan(0);
+      expect(dollars.every((d) => d === "31"), `${tier}: ${dollars.join(",")}`).toBe(true);
+    }
+  });
+
+  it("deflects an exposure offer instead of granting a special discount", () => {
+    const line = ordinaryCounterLine(31, extr({ tactics: ["exposure_offer"], reasoning: "weak" })).toLowerCase();
+    expect(line).toMatch(/exposure|shoutout|follower/);
+    expect(line).toMatch(/do not give|don't give|wave it off|can't pay rent/); // no special discount for clout
+  });
+
+  it("on a no-case push, gives a token bit and asks for a real case", () => {
+    const line = ordinaryCounterLine(40, extr({ reasoning: "none" })).toLowerCase();
+    expect(line).toMatch(/token|hustle|pushing/);
+    expect(line).toMatch(/budget|competitor|commitment/); // tell them what would actually move you
+  });
+
+  it("on a real case, lets the drop feel earned", () => {
+    const line = ordinaryCounterLine(28, extr({ reasoning: "strong" })).toLowerCase();
+    expect(line).toMatch(/earned|fair case|moved you/);
   });
 });
 

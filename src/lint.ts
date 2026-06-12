@@ -25,6 +25,11 @@ export function lintConfig(c: Config, policy?: NegotiationPolicy): LintResult {
 
   // --- hard errors: these break the engine's guarantees or leak margin ------
   if (!(c.floorPrice > 0)) errors.push(`floorPrice must be > 0 (got ${c.floorPrice}) — a $0 floor lets the bouncer give it away`);
+  // The price ladder is an invariant: list > target > floor. The concession curve
+  // is built on it (gentle list→target, steep target→floor), so an inverted plan
+  // (e.g. target above list) corrupts room_factor and is rejected outright.
+  if (!(c.listPrice > c.targetPrice))
+    errors.push(`listPrice (${c.listPrice}) must be greater than targetPrice (${c.targetPrice}) — the ladder is list > target > floor`);
   if (!(c.targetPrice > c.floorPrice))
     errors.push(`targetPrice (${c.targetPrice}) must be greater than floorPrice (${c.floorPrice})`);
   if (!(anchor > c.targetPrice))

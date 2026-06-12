@@ -117,6 +117,7 @@ export class MemoryStore implements Store {
       applicationFeePercent: fields.applicationFeePercent,
       active: fields.active,
       version: fields.version,
+      discovery: fields.discovery ? clone(fields.discovery) : undefined,
     });
     return clone(p);
   }

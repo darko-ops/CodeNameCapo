@@ -34,6 +34,7 @@ import type {
 } from "./types.js";
 import type { Config, Action } from "../engine.js";
 import type { Persona, Extraction } from "../llm/types.js";
+import type { DiscoveryConfig } from "../llm/discovery.js";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -125,12 +126,13 @@ export class PostgresStore implements Store {
     const rows = await this.sql`
       insert into bouncr.plans
         (id, merchant_id, plan_key, currency, config_jsonb, persona_jsonb, policy_jsonb, usage_jsonb,
-         version, active, application_fee_percent)
+         version, active, application_fee_percent, discovery_jsonb)
       values
         (${p.id}, ${p.merchantId}, ${p.planKey}, ${p.currency},
          ${this.sql.json(p.config as any)}, ${this.sql.json(p.persona as any)},
          ${this.sql.json(p.policy as any)}, ${this.sql.json(p.usage as any)},
-         ${p.version}, ${p.active}, ${p.applicationFeePercent ?? null})
+         ${p.version}, ${p.active}, ${p.applicationFeePercent ?? null},
+         ${p.discovery ? this.sql.json(p.discovery as any) : null})
       returning *`;
     return mapPlan(rows[0]);
   }
@@ -143,7 +145,8 @@ export class PostgresStore implements Store {
         currency                = ${f.currency},
         application_fee_percent = ${f.applicationFeePercent},
         active                  = ${f.active},
-        version                 = ${f.version}
+        version                 = ${f.version},
+        discovery_jsonb         = ${f.discovery ? this.sql.json(f.discovery as any) : null}
       where id = ${id} returning *`;
     if (!rows[0]) throw new Error(`plan ${id} not found`);
     return mapPlan(rows[0]);
@@ -420,5 +423,6 @@ function mapPlan(r: any): Plan {
     version: r.version,
     active: r.active,
     applicationFeePercent: r.application_fee_percent == null ? null : Number(r.application_fee_percent),
+    ...(r.discovery_jsonb ? { discovery: r.discovery_jsonb as DiscoveryConfig } : {}),
   };
 }

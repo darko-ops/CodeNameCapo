@@ -256,6 +256,8 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
       ...("application_fee_percent" in b
         ? { applicationFeePercent: num(b.application_fee_percent) }
         : {}),
+      // discovery: the Vini config (renderer-only). Validated in the service.
+      ...("discovery" in b ? { discovery: b.discovery } : {}),
       ...(typeof b.active === "boolean" ? { active: b.active } : {}),
     });
     return c.json({ plan: planJson(plan), embed: embedInfo(baseFromReq(c), plan.id) });
@@ -717,6 +719,7 @@ function planJson(p: import("./store/types.js").Plan) {
     target_price: p.config.targetPrice,
     persona: { name: p.persona.name, product_name: p.persona.productName, style: p.persona.style },
     application_fee_percent: p.applicationFeePercent ?? null,
+    discovery: p.discovery ?? null,
     version: p.version,
     active: p.active,
   };

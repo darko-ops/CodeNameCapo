@@ -21,6 +21,7 @@ import {
   type SessionState,
 } from "../engine.js";
 import type { Extraction, Persona, ChatTurn } from "./types.js";
+import type { DiscoveryView } from "./discovery.js";
 import { extract } from "./extractor.js";
 import { render, template } from "./renderer.js";
 import { validate } from "./validator.js";
@@ -44,6 +45,18 @@ export interface TurnContext {
   history: ChatTurn[]; // prior turns, NOT including the current user message
   userMessage: string;
   now: number;
+  /**
+   * Volunteered discovery context + the merchant's question set. Routed to the
+   * RENDERER ONLY (step 4). It is deliberately absent from the decide() call in
+   * step 2 — discovery personalizes the pitch, never the price (one-way seam,
+   * proven in discovery.test.ts).
+   */
+  discovery?: DiscoveryView;
+  /**
+   * Walk when rounds run out (vs. holding). Off for cold-start haggles (never
+   * rage-quit a lowballer); on for renegotiations (terminate into a grandfather).
+   */
+  endOnRoundsExhausted?: boolean;
 }
 
 /**
@@ -73,7 +86,10 @@ export async function runTurn(ctx: TurnContext): Promise<TurnResult> {
   // numbers (none) barely move; stronger reasoning unlocks a lower price (§ tiers).
   const action: Action = isHostile
     ? { type: "walk" }
-    : decide(state, offer, cfg, now, { reasoning: extraction.reasoning });
+    : decide(state, offer, cfg, now, {
+        reasoning: extraction.reasoning,
+        endOnRoundsExhausted: ctx.endOnRoundsExhausted ?? false,
+      });
 
   // 3. Advance state.
   const nextState = applyAction(state, offer, action);
@@ -94,7 +110,7 @@ export async function runTurn(ctx: TurnContext): Promise<TurnResult> {
   let usedTemplate = false;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    reply = await render(client, persona, action, extraction, renderHistory);
+    reply = await render(client, persona, action, extraction, renderHistory, ctx.discovery);
     const v = validate(reply, action, { allowMentions });
     if (v.ok) break;
     rejections.push(v.reason!);

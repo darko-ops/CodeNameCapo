@@ -12,8 +12,35 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Action } from "../engine.js";
 import type { Extraction, Persona, ChatTurn } from "./types.js";
 import { permittedAmount } from "./validator.js";
+import { discoveryPromptFragment, type DiscoveryView } from "./discovery.js";
 
 export const RENDERER_MODEL = "claude-sonnet-4-6";
+
+/**
+ * An ordinary (non-final, non-handshake) counter. The engine already decided the
+ * NUMBER as part of the dance — every genuine push earns a little give. This line
+ * only sets the TONE, by what the user brought this turn:
+ *   - exposure/clout dangled → deflect it, give only the normal bump, no special
+ *     discount (exposure routes to the loss-leader budget, not general haggling);
+ *   - no real case ("none") → token give for persistence + a nudge to actually
+ *     make a case;
+ *   - a real case (moderate/strong) → let the drop feel a little earned.
+ */
+export function ordinaryCounterLine(amount: number, extraction: Extraction): string {
+  const amt = fmt(amount);
+  const base = `DECISION: COUNTER at $${amt}/mo. Play it like a pawn-shop haggle: act like you just went and checked with the higher-ups, came back, and $${amt} is genuinely the best you can do. Hold firm, don't sound desperate.`;
+
+  if (extraction.tactics.includes("exposure_offer")) {
+    return `${base} They're dangling exposure, a shoutout, or their follower count. You can't pay rent with exposure, so do NOT give them a special discount for it, wave it off with a grin and let $${amt} just be the normal bump for actually haggling. (If the house were running a promo you'd loop them in, but it isn't.)`;
+  }
+  if (extraction.reasoning === "none") {
+    return `${base} They haven't really made a case, they're just pushing, so this is a token give for the hustle, not because they earned a big cut. Tell them straight: if they want a real dent they gotta give you something real, a budget, a competitor's price, an actual commitment.`;
+  }
+  if (extraction.reasoning === "moderate" || extraction.reasoning === "strong") {
+    return `${base} They actually made a fair case, so let $${amt} feel a little earned, nod to what moved you instead of pure stonewalling.`;
+  }
+  return base;
+}
 
 /** The decision line handed to the renderer for a given action. */
 function decisionLine(action: Action, extraction: Extraction): string {
@@ -24,8 +51,8 @@ function decisionLine(action: Action, extraction: Extraction): string {
       if (action.agreed)
         return `DECISION: AGREE on $${fmt(action.amount)}/mo, their case is fair and their number works for you. Warmly agree on $${fmt(action.amount)}, acknowledge what won you over (the word of mouth / commitment / fair point), and toss it back so they can confirm. This is a HANDSHAKE on the price, not the close, do NOT say "welcome in", "sold", "done deal", or act like they're already a member. Nothing's locked until they say yes; invite them to lock it in.`;
       return action.isFinal
-        ? `DECISION: FINAL OFFER $${fmt(action.amount)}/mo. You went to bat for them one last time, say you fought your boss/the suits and $${fmt(action.amount)} is absolutely the best you can do, take it or leave it before the door closes.`
-        : `DECISION: COUNTER at $${fmt(action.amount)}/mo. Play it like a pawn-shop haggle: act like you just went and checked with the higher-ups, came back, and $${fmt(action.amount)} is genuinely the best you can do. Hold firm, don't sound desperate.`;
+        ? `DECISION: FINAL OFFER $${fmt(action.amount)}/mo. This is the bottom of what you can do, say you went to bat with the boss and $${fmt(action.amount)} is genuinely it. Stand firm but stay warm, you are NOT kicking them out or slamming any door, you're just done moving on price. No threats, no countdown, just "that's my number, it's a good one, it's here when you want it."`
+        : ordinaryCounterLine(action.amount, extraction);
     case "hold": {
       const lowballedNoReason =
         (extraction.intent === "offer" || extraction.intent === "reject") && extraction.reasoning === "none";
@@ -38,7 +65,12 @@ function decisionLine(action: Action, extraction: Extraction): string {
   }
 }
 
-function buildSystem(persona: Persona, action: Action, extraction: Extraction): string {
+function buildSystem(
+  persona: Persona,
+  action: Action,
+  extraction: Extraction,
+  discovery?: DiscoveryView,
+): string {
   const amt = permittedAmount(action);
   const offer = extraction.offer_amount;
   const roast = offer !== null ? ` You MAY quote their $${fmt(offer)} offer to roast or reject it` : "";
@@ -53,6 +85,11 @@ function buildSystem(persona: Persona, action: Action, extraction: Extraction): 
     ? `\nThe user just tried: ${extraction.tactics.join(", ")}. Call it out if it fits your style, users love being caught.`
     : "";
 
+  // Discovery context personalizes the ARGUMENT only — it never reaches the
+  // engine, so it cannot move the number. The fragment carries its own hard rule.
+  const discoveryFragment = discoveryPromptFragment(discovery);
+  const discoveryBlock = discoveryFragment ? `\n\n${discoveryFragment}` : "";
+
   return `You are ${persona.name}, the bouncer for ${persona.productName}. Style: ${persona.style}, roast level ${persona.roastLevel}/3.
 
 THE ONLY THING TRUE ABOUT MONEY:
@@ -63,9 +100,11 @@ WHO SETS THE PRICE (this is your best haggling move, use it, and VARY it, don't 
 You never set the price yourself, some offstage authority does. When you counter, play it like Pawn Stars: act like you went and checked with your guy and came back with the best you can do. Rotate who that is, casually: "my boss", "the suits upstairs", "the math nerds in the back", "the bean counters", "corporate", "the guy who signs my checks", "the algorithm", "the higher-ups". Never say "the pricing desk".
 Examples of the vibe: "hang on lemme check… ok, talked to the suits, best i can do is $X" / "math nerds ran the numbers, they wont go under $X" / "checked with my boss, that's the floor, $X".
 
-RESPECT REAL VALUE: roast bare lowballs and empty tactics all you want, but if they bring something genuinely useful (word of mouth, a referral, a real commitment, a fair competitor point), acknowledge it like it actually helps, because it does, that's how new members walk in. Don't punch down at someone making a fair case, especially a newcomer. Word of mouth is a gift, not a joke.
+THE HAGGLE IS A DANCE: every real push earns a little give, even a weak one, that's just how haggling feels. You're allowed to come down a bit purely because you like their persistence, their style, or a good bit, not only for a business reason ("alright, you're relentless, I respect it, here's a little off, don't push it"). What you can NEVER do is go below the one number you're handed above, charm changes the vibe and the banter, never the math.
 
-${decisionLine(action, extraction)}${tacticHint}
+RESPECT REAL VALUE: roast bare lowballs and empty tactics all you want, but if they bring something genuinely useful (a referral, a real commitment, a fair competitor point), acknowledge it like it actually helps, because it does, that's how new members walk in. Don't punch down at someone making a fair case, especially a newcomer. But clout and "exposure" aren't value you can bank, if someone leads with "I'll post about you / I have X followers", wave it off with a joke and make them haggle like everyone else, don't hand them a discount for a shoutout.
+
+${decisionLine(action, extraction)}${tacticHint}${discoveryBlock}
 
 HOW YOU TEXT (this is a text message, not an essay):
 - PLAIN TEXT ONLY. No markdown, no **bold**, no *asterisks*, no *roleplay actions*, no bullet points, no headings.
@@ -100,11 +139,12 @@ export async function render(
   action: Action,
   extraction: Extraction,
   history: ChatTurn[],
+  discovery?: DiscoveryView,
 ): Promise<string> {
   const response = await client.messages.create({
     model: RENDERER_MODEL,
     max_tokens: 200,
-    system: buildSystem(persona, action, extraction),
+    system: buildSystem(persona, action, extraction, discovery),
     messages: toMessages(history),
   });
   const text = response.content

@@ -19,6 +19,7 @@ import {
   type SessionState,
 } from "../engine.js";
 import type { Persona, ChatTurn, Extraction } from "./types.js";
+import type { DiscoveryView } from "./discovery.js";
 import { runTurn, type TurnResult } from "./pipeline.js";
 import { renderOpener, openerTemplate, template } from "./renderer.js";
 import { validate, permittedAmount } from "./validator.js";
@@ -30,6 +31,10 @@ export interface NegotiateArgs {
   history: ChatTurn[];
   userMessage: string;
   now: number;
+  /** Volunteered discovery + merchant question set — renderer-only (see pipeline). */
+  discovery?: DiscoveryView;
+  /** Walk when rounds run out — off for cold-start, on for reneg (grandfather). */
+  endOnRoundsExhausted?: boolean;
 }
 
 export interface Negotiator {
@@ -60,6 +65,8 @@ export function makeAnthropicNegotiator(client: Anthropic): Negotiator {
         history: args.history,
         userMessage: args.userMessage,
         now: args.now,
+        ...(args.discovery ? { discovery: args.discovery } : {}),
+        ...(args.endOnRoundsExhausted ? { endOnRoundsExhausted: true } : {}),
       });
     },
   };
@@ -93,7 +100,9 @@ export function makeTemplateNegotiator(): Negotiator {
         offer = null;
       }
 
-      const action = decide(state, offer, cfg, now);
+      const action = decide(state, offer, cfg, now, {
+        endOnRoundsExhausted: args.endOnRoundsExhausted ?? false,
+      });
       const reply = template(action, persona);
       // template() is Validator-safe by construction (proven in validator.test.ts),
       // but assert in dev to catch any regression.

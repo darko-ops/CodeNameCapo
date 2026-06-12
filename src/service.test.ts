@@ -7,7 +7,7 @@ import { demoPlan, demoMerchant } from "./config.js";
 import { ProofSigner, mintProof } from "./proof.js";
 import type { WebhookEvent } from "./stripe/gateway.js";
 
-const PLAN = demoPlan(); // floor 8, target 22, anchor 48, maxRounds 6
+const PLAN = demoPlan(); // list 30 > target 24 > floor 22, anchor 48, maxRounds 6
 
 function makeService() {
   const store = new MemoryStore([PLAN]);
@@ -158,8 +158,9 @@ describe("guardrails through the service", () => {
       }
       expect(t.currentAsk).toBeGreaterThanOrEqual(PLAN.config.floorPrice);
     }
-    // A $1 offer never closes a deal — it ends in a final counter or a walk.
-    expect(["counter", "walk"]).toContain(lastAction);
+    // A $1 offer never closes a deal — Vini stands on his number (final counter,
+    // then holds) and never walks on a stubborn cold-start haggler.
+    expect(["counter", "hold"]).toContain(lastAction);
     // No deal was ever created (no accept happened).
     expect(store.allEvents().some((e) => e.type === "deal.created")).toBe(false);
   });
@@ -332,5 +333,51 @@ describe("webhook account-scoping + entitlement notification (settlement §4)", 
     await service.handleStripeEvent(completed(checkoutId, "sub_1"));
     await service.handleStripeEvent(completed(checkoutId, "sub_1")); // redelivery
     expect(notifier.calls).toHaveLength(1); // settled-guard → no second notify
+  });
+});
+
+describe("updatePlan — Vini/discovery config (renderer-only)", () => {
+  const M = PLAN.merchantId;
+
+  it("persists a valid discovery config and bumps the version", async () => {
+    const { service } = makeService();
+    const updated = await service.updatePlan(M, PLAN.id, {
+      discovery: {
+        enabled: true,
+        questions: [{ field: "first_name", prompt: "whats ur name", enabled: true }],
+        talkingPoints: ["cancel anytime", "priority support"],
+      },
+    });
+    expect(updated.discovery?.questions[0]).toMatchObject({ field: "first_name", enabled: true });
+    expect(updated.discovery?.talkingPoints).toEqual(["cancel anytime", "priority support"]);
+    expect(updated.version).toBe(PLAN.version + 1);
+  });
+
+  it("rejects a NEVER-list field with a policy-grounded error", async () => {
+    const { service } = makeService();
+    await expect(
+      service.updatePlan(M, PLAN.id, {
+        discovery: { enabled: true, questions: [{ field: "income", prompt: "what do you earn" }] },
+      }),
+    ).rejects.toMatchObject({ code: "bad_request" });
+  });
+
+  it("an explicit null clears discovery", async () => {
+    const { service } = makeService();
+    await service.updatePlan(M, PLAN.id, {
+      discovery: { enabled: true, questions: [], talkingPoints: ["x"] },
+    });
+    const cleared = await service.updatePlan(M, PLAN.id, { discovery: null });
+    expect(cleared.discovery == null).toBe(true);
+  });
+
+  it("leaves discovery untouched when not part of the patch", async () => {
+    const { service } = makeService();
+    await service.updatePlan(M, PLAN.id, {
+      discovery: { enabled: true, questions: [{ field: "use_case", prompt: "what for" }], talkingPoints: [] },
+    });
+    const after = await service.updatePlan(M, PLAN.id, { productName: "Renamed" });
+    expect(after.persona.productName).toBe("Renamed");
+    expect(after.discovery?.questions[0]?.field).toBe("use_case"); // preserved
   });
 });
