@@ -575,8 +575,11 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     if (ctype.includes("application/json")) {
       proof = str((await safeJson(c)).proof) ?? undefined;
     } else {
-      const form = await c.req.parseBody();
-      proof = typeof form.proof === "string" ? form.proof : undefined;
+      // Read the raw body and parse it ourselves — Hono's parseBody() can hang
+      // under the Node serverless adapter, but text() is reliable (the webhook
+      // uses it too). The hosted page posts a urlencoded <form>.
+      const raw = await c.req.text();
+      proof = new URLSearchParams(raw).get("proof") ?? undefined;
     }
     const r = await service.startCheckout(dealId, proof);
     // redirect → Stripe; settled/invalid → back to the page (settled or re-mint).
