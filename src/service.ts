@@ -9,7 +9,7 @@
  * Dependencies are injected (Store, StripeGateway, Negotiator) so the whole flow
  * runs offline in tests with the in-memory store + fake Stripe + template negotiator.
  */
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { openSession, round2, type Action, type Config, type SessionState } from "./engine.js";
 import type { Store, Plan, Merchant, SessionRecord, TurnRecord, DealRecord } from "./store/types.js";
 import type { Persona } from "./llm/types.js";
@@ -545,10 +545,14 @@ export class BouncrService {
     return merchant;
   }
 
-  /** Public merchant info for a logged-in dashboard (id + name + email). */
-  async getMerchantInfo(merchantId: string): Promise<{ id: string; name: string; email: string | null } | null> {
+  /** Public merchant info for a logged-in dashboard (id + name + email + settlement config). */
+  async getMerchantInfo(
+    merchantId: string,
+  ): Promise<{ id: string; name: string; email: string | null; webhookUrl: string | null; liveMode: boolean } | null> {
     const m = await this.store.getMerchant(merchantId);
-    return m ? { id: m.id, name: m.name, email: m.email } : null;
+    return m
+      ? { id: m.id, name: m.name, email: m.email, webhookUrl: m.webhookUrl ?? null, liveMode: Boolean(m.liveMode) }
+      : null;
   }
 
   /** Mint (or rotate) a merchant's API key; stores only the hash, returns the
@@ -803,11 +807,51 @@ export class BouncrService {
       returnUrl,
       refreshUrl,
     });
-    if (r.accountId !== merchant.stripeConnectId) {
-      await this.store.updateMerchant(merchantId, { stripeConnectId: r.accountId });
-    }
+    const patch: Parameters<typeof this.store.updateMerchant>[1] = {};
+    if (r.accountId !== merchant.stripeConnectId) patch.stripeConnectId = r.accountId;
+    // Generate the per-merchant OUTBOUND signing secret at onboarding (distinct
+    // from the inbound API key) so entitlement webhooks can be signed.
+    if (!merchant.webhookSecret) patch.webhookSecret = `whsec_${randomBytes(24).toString("hex")}`;
+    if (Object.keys(patch).length) await this.store.updateMerchant(merchantId, patch);
     await this.store.appendEvent("connect.onboarding_started", { merchantId, accountId: r.accountId });
     return { url: r.url, accountId: r.accountId };
+  }
+
+  /**
+   * Set (or clear) the merchant's entitlement webhook URL, generating the
+   * outbound signing secret if needed. Returns the secret so the merchant can
+   * configure verification on their side.
+   */
+  async setWebhookUrl(merchantId: string, url: string | null): Promise<{ webhookUrl: string | null; webhookSecret: string | null }> {
+    const merchant = await this.store.getMerchant(merchantId);
+    if (!merchant) throw new ServiceError("not_found", `merchant ${merchantId} not found`);
+    const trimmed = url?.trim() || null;
+    if (trimmed && !/^https?:\/\/.+/i.test(trimmed)) {
+      throw new ServiceError("bad_request", "webhook_url must be an http(s) URL");
+    }
+    const webhookSecret = merchant.webhookSecret ?? `whsec_${randomBytes(24).toString("hex")}`;
+    await this.store.updateMerchant(merchantId, { webhookUrl: trimmed, webhookSecret });
+    return { webhookUrl: trimmed, webhookSecret };
+  }
+
+  /**
+   * Live-mode gate (Spec settlement §5): a merchant cannot switch to live mode
+   * until they've configured a webhook_url. This is WHERE the "merchant must hear
+   * about entitlements" guarantee lives — enforced at go-live (failing is safe),
+   * never at settlement (failing there would strand a completed charge).
+   */
+  async goLive(merchantId: string): Promise<{ liveMode: boolean }> {
+    const merchant = await this.store.getMerchant(merchantId);
+    if (!merchant) throw new ServiceError("not_found", `merchant ${merchantId} not found`);
+    if (!merchant.webhookUrl) {
+      throw new ServiceError(
+        "bad_request",
+        "configure a webhook_url before going live — Bouncr must be able to notify you to grant entitlements",
+      );
+    }
+    await this.store.updateMerchant(merchantId, { liveMode: true });
+    await this.store.appendEvent("merchant.went_live", { merchantId });
+    return { liveMode: true };
   }
 
   /** Connect status for a merchant — drives the dashboard's "ready to settle" badge. */

@@ -391,6 +391,22 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     return c.json({ connected: s.connected, account_id: s.accountId, charges_enabled: s.chargesEnabled, live: Boolean(deps.stripeLive) });
   });
 
+  // Set/clear the entitlement webhook URL; returns the outbound signing secret
+  // (shown so the merchant can verify our HMAC). Owner-scoped.
+  app.put("/v1/merchants/:id/webhook", dashboardAuth, async (c) => {
+    if (c.req.param("id") !== c.get("merchantId")) return c.json({ error: "not found", code: "not_found" }, 404);
+    const url = str((await safeJson(c)).url);
+    const r = await service.setWebhookUrl(c.get("merchantId"), url ?? null);
+    return c.json({ webhook_url: r.webhookUrl, webhook_secret: r.webhookSecret });
+  });
+
+  // Live-mode gate: refuses unless a webhook_url is configured (settlement §5).
+  app.post("/v1/merchants/:id/go-live", dashboardAuth, async (c) => {
+    if (c.req.param("id") !== c.get("merchantId")) return c.json({ error: "not found", code: "not_found" }, 404);
+    const r = await service.goLive(c.get("merchantId"));
+    return c.json({ live_mode: r.liveMode });
+  });
+
   // --- widget routes (session token) ---------------------------------------
 
   const sessionAuth = sessionTokenGuard(service);

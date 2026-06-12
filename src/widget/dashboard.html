@@ -210,6 +210,20 @@
         <div class="meta" id="connect-note" style="margin-top:8px"></div>
         <div style="margin-top:14px">Bouncr take-rate: <b id="take-rate" style="color:var(--accent2)">—</b>
           <span class="meta" id="take-note"></span></div>
+
+        <hr class="hr" />
+        <h3 style="margin-top:0">Entitlement webhook</h3>
+        <p class="meta" style="margin:0 0 10px">When a deal settles, Bouncr POSTs a signed event here so you can grant access. Required before going live.</p>
+        <form id="wh-form" autocomplete="off">
+          <input id="wh-url" type="url" placeholder="https://yourapp.com/bouncr/webhook" />
+          <div style="margin-top:10px"><button class="ghost" id="wh-save" type="submit">Save webhook</button>
+            <span class="meta" id="wh-status"></span></div>
+        </form>
+        <div class="keybox" id="wh-secret-box" style="display:none; margin-top:12px"><span class="keyval" id="wh-secret"></span><button class="ghost copy" id="wh-copy" type="button">Copy</button></div>
+        <div class="warn" id="wh-secret-warn" style="display:none">⚠ Your signing secret — verify the Bouncr-Signature header with it. Shown once.</div>
+        <div class="row-line" style="margin-top:14px">Mode: <span id="live-badge" class="badge no">test</span>
+          <button class="ghost sm" id="golive-btn">Go live</button></div>
+        <span class="meta" id="golive-status"></span>
       </div>
 
       <div class="seclabel">Account</div>
@@ -275,6 +289,12 @@
   function showAuthed(name) {
     MERCHANT = name && name.id ? name.id : MERCHANT;
     $("who").textContent = (name && name.name) ? name.name : (MERCHANT || "");
+    if (name) {
+      if (name.webhookUrl) $("wh-url").value = name.webhookUrl;
+      const lb = $("live-badge");
+      if (name.liveMode) { lb.className = "badge ok"; lb.textContent = "live"; $("golive-btn").style.display = "none"; }
+      else { lb.className = "badge no"; lb.textContent = "test"; $("golive-btn").style.display = ""; }
+    }
     $("login").style.display = "none";
     $("app").style.display = "";
     setView("overview");
@@ -283,7 +303,7 @@
     token = null; MERCHANT = null; localStorage.removeItem(TKEY);
     $("app").style.display = "none";
     $("login").style.display = "";
-    $("key").value = "";
+    const pw = $("password"); if (pw) pw.value = "";
   }
 
   $("login").addEventListener("submit", async (e) => {
@@ -615,6 +635,35 @@
   $("connect-btn").onclick = async () => {
     const r = await (await apiPost("/v1/merchants/" + encodeURIComponent(MERCHANT) + "/connect/onboard", { return_url: location.href })).json();
     if (r.url) window.open(r.url, "_blank"); else alert(r.error || "could not start onboarding");
+  };
+
+  $("wh-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const url = $("wh-url").value.trim();
+    const set = (m, ok) => ($("wh-status").innerHTML = ok ? '<span style="color:var(--mint)">' + m + "</span>" : '<span class="err">' + m + "</span>");
+    $("wh-save").disabled = true; set("saving…", true);
+    try {
+      const r = guard(await fetch(base() + "/v1/merchants/" + encodeURIComponent(MERCHANT) + "/webhook", {
+        method: "PUT", headers: { ...authHeaders(), "content-type": "application/json" }, body: JSON.stringify({ url }),
+      }));
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "could not save");
+      if (d.webhook_secret) { $("wh-secret").textContent = d.webhook_secret; $("wh-secret-box").style.display = "block"; $("wh-secret-warn").style.display = "block"; }
+      set("Saved.", true);
+    } catch (err) { set(err.message, false); } finally { $("wh-save").disabled = false; }
+  });
+  $("wh-copy").onclick = (e) => {
+    e.preventDefault();
+    if (navigator.clipboard) navigator.clipboard.writeText($("wh-secret").textContent);
+    e.target.textContent = "Copied"; setTimeout(() => (e.target.textContent = "Copy"), 1200);
+  };
+  $("golive-btn").onclick = async () => {
+    $("golive-btn").disabled = true; $("golive-status").textContent = "";
+    try {
+      const r = guard(await fetch(base() + "/v1/merchants/" + encodeURIComponent(MERCHANT) + "/go-live", { method: "POST", headers: authHeaders() }));
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "could not go live");
+      const lb = $("live-badge"); lb.className = "badge ok"; lb.textContent = "live"; $("golive-btn").style.display = "none";
+    } catch (e) { $("golive-status").innerHTML = '<span class="err">' + e.message + "</span>"; }
+    finally { $("golive-btn").disabled = false; }
   };
 
   function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }

@@ -93,6 +93,8 @@ describe("Stripe Connect routing (Spec §7, Phase 3)", () => {
     expect(r.accountId).toMatch(/^acct_test_/);
     expect(r.url).toContain("/connect/onboard/");
     expect((await store.getMerchant("merchant_demo"))?.stripeConnectId).toBe(r.accountId);
+    // Onboarding also generates the outbound entitlement-signing secret.
+    expect((await store.getMerchant("merchant_demo"))?.webhookSecret).toMatch(/^whsec_/);
 
     const status = await service.getConnectStatus("merchant_demo");
     expect(status).toMatchObject({ connected: true, chargesEnabled: true });

@@ -231,6 +231,41 @@ describe("hosted checkout page (settlement)", () => {
   });
 });
 
+describe("Connect settlement config + live-mode gate (settlement §5)", () => {
+  const putJson = (app: any, path: string, body: unknown, headers: Record<string, string>) =>
+    app.request(path, { method: "PUT", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+
+  it("sets a webhook url (returns a signing secret) and gates go-live on it", async () => {
+    const { app, email, password } = makeApp();
+    const auth = await login(app, email, password);
+    const mid = "merchant_demo";
+
+    // Go-live BEFORE configuring a webhook_url → blocked (the guarantee lives here).
+    expect((await post(app, `/v1/merchants/${mid}/go-live`, undefined, auth)).status).toBe(400);
+
+    // A non-http(s) url is rejected.
+    expect((await putJson(app, `/v1/merchants/${mid}/webhook`, { url: "ftp://x" }, auth)).status).toBe(400);
+
+    // Setting a valid url returns the outbound signing secret.
+    const set = await putJson(app, `/v1/merchants/${mid}/webhook`, { url: "https://m.test/hook" }, auth);
+    expect(set.status).toBe(200);
+    const body = await set.json();
+    expect(body.webhook_url).toBe("https://m.test/hook");
+    expect(body.webhook_secret).toMatch(/^whsec_/);
+
+    // Now go-live succeeds, and /auth/me reflects the settlement config.
+    expect((await (await post(app, `/v1/merchants/${mid}/go-live`, undefined, auth)).json()).live_mode).toBe(true);
+    const me = await (await app.request("/v1/auth/me", { headers: auth })).json();
+    expect(me.merchant.webhookUrl).toBe("https://m.test/hook");
+    expect(me.merchant.liveMode).toBe(true);
+
+    // Owner-scoped: a different merchant can't touch this one's webhook (404).
+    const other = await (await signup(app, { name: "Other Co" })).json();
+    const oauth = { authorization: "Bearer " + other.token };
+    expect((await putJson(app, `/v1/merchants/${mid}/webhook`, { url: "https://e.vil/hook" }, oauth)).status).toBe(404);
+  });
+});
+
 describe("settlement proof JWKS", () => {
   it("publishes a verifiable Ed25519 public key, no private material", async () => {
     const { app } = makeApp();
