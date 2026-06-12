@@ -1001,6 +1001,10 @@ export class BouncrService {
     plan: Plan,
     amount: number,
   ): Promise<{ checkoutUrl: string; dealId: string }> {
+    // Create the pending deal, then hand back the Bouncr-HOSTED checkout URL
+    // (carrying a fresh proof). NO Stripe object is created here — that happens
+    // when the buyer clicks Pay on the hosted page (startCheckout), so the jti is
+    // burned at session creation and Apple/Google Pay come free via Stripe Checkout.
     const deal = await this.store.createDeal({
       sessionId: session.id,
       merchantId: plan.merchantId,
@@ -1012,35 +1016,75 @@ export class BouncrService {
       kind: "initial",
       stripeCheckoutId: null,
       stripeSubscriptionId: null,
+      checkoutStatus: "none",
       renegSessionId: null,
       settledAt: null,
     });
+    await this.store.appendEvent("deal.created", { dealId: deal.id, price: amount });
+    return { checkoutUrl: this.mintCheckoutUrl(deal, plan), dealId: deal.id };
+  }
 
-    // Connect (Spec §7): settle into the merchant's account when onboarded, and
-    // take Bouncr's cut as an application fee on that direct charge (§ business
-    // model). No connected account => settles to the platform, no fee.
+  /**
+   * The hosted page's Pay button (Spec settlement §3): verify the proof, BURN the
+   * jti atomically (single-use), then create a Stripe Checkout Session DIRECTLY on
+   * the merchant's connected account (subscription for "month", one-time
+   * PaymentIntent for "one_time") and redirect there. Resume/idempotency keep an
+   * abandoned or double-tapped checkout from charging twice or stranding the deal.
+   * Settlement itself happens ONLY via the webhook (§4), never the redirect.
+   */
+  async startCheckout(
+    dealId: string,
+    proofToken: string | undefined,
+  ): Promise<{ state: "redirect"; url: string } | { state: "settled" } | { state: "invalid" }> {
+    const deal = await this.store.getDeal(dealId);
+    if (!deal) return { state: "invalid" };
+    if (deal.status === "settled") return { state: "settled" };
+    const plan = await this.store.getPlanById(deal.planId);
+    if (!plan) return { state: "invalid" };
+    const now = this.now();
+
+    // Resume an open, unexpired session (handles double-tap and return-to-tab).
+    if (deal.checkoutStatus === "pending" && deal.checkoutUrl && (deal.checkoutExpiresAt ?? Infinity) > now) {
+      return { state: "redirect", url: deal.checkoutUrl };
+    }
+
+    const res = proofToken ? await this.verifyProof(proofToken) : ({ ok: false } as const);
+    if (!res.ok || res.claims.deal_id !== dealId) return { state: "invalid" }; // page re-mints
+
+    // Single-use: burn the jti BEFORE creating the session. If we lose the race,
+    // resume whatever session the winner created (never mint a second proof).
+    const won = await this.store.redeemProof(res.claims.jti, dealId, now);
+    if (!won) {
+      const fresh = await this.store.getDeal(dealId);
+      if (fresh?.checkoutUrl && fresh.checkoutStatus === "pending") return { state: "redirect", url: fresh.checkoutUrl };
+      return { state: "invalid" };
+    }
+
     const merchant = await this.store.getMerchant(plan.merchantId);
     const connectedAccountId = merchant?.stripeConnectId ?? null;
     const checkout = await this.stripe.createCheckout({
       planKey: plan.planKey,
       productName: plan.persona.productName,
-      amount,
-      currency: plan.currency,
-      endUserRef: session.endUserRef,
+      amount: res.claims.amount / 100, // proof carries cents; gateway takes dollars
+      currency: res.claims.currency,
+      endUserRef: deal.endUserRef,
       dealId: deal.id,
+      interval: res.claims.interval,
+      idempotencyKey: `bouncr_checkout_${dealId}_${res.claims.jti}`,
       connectedAccountId,
       applicationFeePercent: connectedAccountId && this.feeFor(plan) > 0 ? this.feeFor(plan) : null,
-      successUrl: `${this.baseUrl}/return?status=success&deal=${deal.id}`,
-      cancelUrl: `${this.baseUrl}/return?status=cancel&deal=${deal.id}`,
+      successUrl: `${this.baseUrl}/checkout/${deal.id}`,
+      cancelUrl: `${this.baseUrl}/checkout/${deal.id}`,
     });
 
-    await this.store.updateDeal(deal.id, { stripeCheckoutId: checkout.checkoutId });
-    await this.store.appendEvent("deal.created", {
-      dealId: deal.id,
-      price: amount,
-      checkoutId: checkout.checkoutId,
+    await this.store.updateDeal(deal.id, {
+      stripeCheckoutId: checkout.checkoutId,
+      checkoutUrl: checkout.url,
+      checkoutStatus: "pending",
+      checkoutExpiresAt: checkout.expiresAt ?? now + 30 * 60 * 1000,
     });
-    return { checkoutUrl: checkout.url, dealId: deal.id };
+    await this.store.appendEvent("checkout.started", { dealId: deal.id, checkoutId: checkout.checkoutId });
+    return { state: "redirect", url: checkout.url };
   }
 
   /** End a session as a walk (message cap / abuse) and start the cooldown. */

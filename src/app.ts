@@ -546,6 +546,26 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     if (view.state === "resume" || view.state === "remint") return c.redirect(view.url, 302);
     return c.html(checkoutHtml(view));
   });
+
+  // Pay button → verify proof, burn jti, create the Stripe session on the
+  // connected account, redirect to Stripe. Accepts form-encoded or JSON proof.
+  app.post("/checkout/:deal_id/pay", async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 60_000, max: 20 }])) {
+      return c.redirect(`/checkout/${c.req.param("deal_id")}`, 303);
+    }
+    const dealId = c.req.param("deal_id")!;
+    let proof: string | undefined;
+    const ctype = c.req.header("content-type") ?? "";
+    if (ctype.includes("application/json")) {
+      proof = str((await safeJson(c)).proof) ?? undefined;
+    } else {
+      const form = await c.req.parseBody();
+      proof = typeof form.proof === "string" ? form.proof : undefined;
+    }
+    const r = await service.startCheckout(dealId, proof);
+    // redirect → Stripe; settled/invalid → back to the page (settled or re-mint).
+    return c.redirect(r.state === "redirect" ? r.url : `/checkout/${dealId}`, 303);
+  });
   app.get("/embed.js", (c) => {
     c.header("content-type", "application/javascript; charset=utf-8");
     return c.body(EMBED_JS);

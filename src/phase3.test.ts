@@ -33,6 +33,13 @@ const completed = (checkoutId: string): WebhookEvent => ({
   subscriptionId: "sub_x",
 });
 
+// Drive the hosted-checkout Pay step: pull the proof from the accept URL and
+// create the Stripe session, so stripe.checkouts / deal.stripeCheckoutId populate.
+async function pay(service: BouncrService, accepted: { checkoutUrl?: string }) {
+  const u = new URL(accepted.checkoutUrl!);
+  return service.startCheckout(u.pathname.split("/checkout/")[1]!, u.searchParams.get("proof")!);
+}
+
 describe("walkaway cooldown (Spec §12)", () => {
   it("blocks a new session for the same user+plan after a walk", async () => {
     const { plan, store, service } = setup({ maxMessages: 1 }); // force a quick walk
@@ -90,14 +97,14 @@ describe("Stripe Connect routing (Spec §7, Phase 3)", () => {
 
     // A deal now settles into the connected account.
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
-    await service.acceptCurrent(sessionId);
+    await pay(service, await service.acceptCurrent(sessionId));
     expect(stripe.checkouts.at(-1)?.connectedAccountId).toBe(r.accountId);
   });
 
   it("settles to the platform when the merchant is not connected", async () => {
     const { plan, stripe, service } = setup();
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
-    await service.acceptCurrent(sessionId);
+    await pay(service, await service.acceptCurrent(sessionId));
     expect(stripe.checkouts.at(-1)?.connectedAccountId).toBeNull();
   });
 });
@@ -107,7 +114,7 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     const { plan, stripe, service } = setup({}, { applicationFeePercent: 20 });
     await service.startConnectOnboarding("merchant_demo", "http://x/return", "http://x/refresh");
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
-    await service.acceptCurrent(sessionId);
+    await pay(service, await service.acceptCurrent(sessionId));
     const last = stripe.checkouts.at(-1)!;
     expect(last.connectedAccountId).toMatch(/^acct_test_/);
     expect(last.applicationFeePercent).toBe(20); // 20% of each invoice -> Bouncr
@@ -116,7 +123,7 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
   it("takes NO fee when the deal settles to the platform (no connected account)", async () => {
     const { plan, stripe, service } = setup({}, { applicationFeePercent: 20 });
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
-    await service.acceptCurrent(sessionId);
+    await pay(service, await service.acceptCurrent(sessionId));
     const last = stripe.checkouts.at(-1)!;
     expect(last.connectedAccountId).toBeNull();
     expect(last.applicationFeePercent).toBeNull(); // no account to fee against
@@ -126,13 +133,13 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     const noFee = setup();
     await noFee.service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
     let s = await noFee.service.createSession({ planId: noFee.plan.id, endUserRef: "b" });
-    await noFee.service.acceptCurrent(s.sessionId);
+    await pay(noFee.service, await noFee.service.acceptCurrent(s.sessionId));
     expect(noFee.stripe.checkouts.at(-1)!.applicationFeePercent).toBeNull();
 
     const tooHigh = setup({}, { applicationFeePercent: 250 });
     await tooHigh.service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
     s = await tooHigh.service.createSession({ planId: tooHigh.plan.id, endUserRef: "b" });
-    await tooHigh.service.acceptCurrent(s.sessionId);
+    await pay(tooHigh.service, await tooHigh.service.acceptCurrent(s.sessionId));
     expect(tooHigh.stripe.checkouts.at(-1)!.applicationFeePercent).toBe(100); // clamped
   });
 
@@ -141,7 +148,7 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     const { plan, stripe, service } = setup({}, { applicationFeePercent: 20, planFeePercent: 15 });
     await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "b" });
-    await service.acceptCurrent(sessionId);
+    await pay(service, await service.acceptCurrent(sessionId));
     expect(stripe.checkouts.at(-1)!.applicationFeePercent).toBe(15);
   });
 
@@ -149,7 +156,7 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     const { plan, stripe, service } = setup({}, { planFeePercent: 12 });
     await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "b" });
-    await service.acceptCurrent(sessionId);
+    await pay(service, await service.acceptCurrent(sessionId));
     expect(stripe.checkouts.at(-1)!.applicationFeePercent).toBe(12);
   });
 
@@ -157,7 +164,7 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     const { plan, stripe, service } = setup({}, { applicationFeePercent: 20, planFeePercent: 0 });
     await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "b" });
-    await service.acceptCurrent(sessionId);
+    await pay(service, await service.acceptCurrent(sessionId));
     expect(stripe.checkouts.at(-1)!.applicationFeePercent).toBeNull(); // 0 → no fee
   });
 
@@ -166,6 +173,7 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     await service.startConnectOnboarding("merchant_demo", "http://x/r", "http://x/r");
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "b" });
     const acc = await service.acceptCurrent(sessionId);
+    await pay(service, acc);
     await service.handleStripeEvent(completed((await store.getDeal(acc.dealId))!.stripeCheckoutId!));
 
     const a = await service.getAnalytics(plan.id);
@@ -180,6 +188,7 @@ describe("Connect application fee — Bouncr's take-rate (business model)", () =
     // Close + settle an initial deal so a subscription exists to reprice.
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "buyer" });
     const accepted = await service.acceptCurrent(sessionId);
+    await pay(service, accepted);
     await service.handleStripeEvent(completed((await store.getDeal(accepted.dealId))!.stripeCheckoutId!));
     // Reopen + reprice upward.
     const r = await service.renegotiateDeal(accepted.dealId, "up");
@@ -199,6 +208,7 @@ describe("WTP analytics (Spec §11)", () => {
     const t1 = await service.postMessage(a.sessionId, "$3"); // first offer 3, counter
     const ask = t1.currentAsk;
     const close = await service.postMessage(a.sessionId, `ok ${ask}`); // meets the ask → accept
+    await pay(service, close);
     await service.handleStripeEvent(completed((await store.getDeal(close.dealId!))!.stripeCheckoutId!));
 
     // Session B: engages but never closes.

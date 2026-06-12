@@ -30,7 +30,13 @@ export class FakeStripeGateway implements StripeGateway {
   async createCheckout(params: CheckoutParams): Promise<CheckoutResult> {
     this.checkouts.push(params);
     const checkoutId = `cs_test_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
-    return { checkoutId, url: `${this.baseUrl}/checkout/${checkoutId}` };
+    // A fake Stripe-hosted URL (distinct from Bouncr's /checkout page) + a 30-min
+    // expiry so the resume/re-mint paths can be exercised offline.
+    return {
+      checkoutId,
+      url: `${this.baseUrl}/stripe-checkout/${checkoutId}`,
+      expiresAt: Date.now() + 30 * 60 * 1000,
+    };
   }
 
   parseWebhook(rawBody: string): WebhookEvent {

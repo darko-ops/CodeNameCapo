@@ -74,8 +74,8 @@ async function startSession(app: any) {
 const tok = (token: string) => ({ "x-session-token": token });
 
 describe("HTTP API (Spec §9)", () => {
-  it("walks the full create → message → accept → webhook → deal path", async () => {
-    const { app } = makeApp();
+  it("walks the full create → message → accept → checkout → webhook → deal path", async () => {
+    const { app, store } = makeApp();
 
     const created = await post(app, "/v1/sessions", { plan_id: PLAN.id, end_user_ref: "user_9" });
     expect(created.status).toBe(201);
@@ -95,12 +95,24 @@ describe("HTTP API (Spec §9)", () => {
     const acc = await post(app, `/v1/sessions/${session_id}/accept`, undefined, tok(session_token));
     const accBody = await acc.json();
     expect(acc.status).toBe(200);
-    expect(accBody.checkout_url).toContain("/checkout/");
+    // The accept hands back the Bouncr-HOSTED checkout page (with a proof), not Stripe.
+    expect(accBody.checkout_url).toContain(`/checkout/${accBody.deal_id}?proof=`);
 
     const dealRes = await app.request(`/v1/deals/${accBody.deal_id}`);
     expect((await dealRes.json()).status).toBe("pending");
 
-    const checkoutId = accBody.checkout_url.split("/checkout/")[1];
+    // Buyer clicks Pay on the hosted page → Stripe session created, redirect to Stripe.
+    const proof = new URL(accBody.checkout_url).searchParams.get("proof")!;
+    const payRes = await app.request(`/checkout/${accBody.deal_id}/pay`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ proof }).toString(),
+    });
+    expect(payRes.status).toBe(303);
+    expect(payRes.headers.get("location")).toContain("/stripe-checkout/");
+
+    // The deal now carries the real Stripe Checkout Session id; the webhook settles it.
+    const checkoutId = (await store.getDeal(accBody.deal_id))!.stripeCheckoutId!;
     expect(checkoutId).toMatch(/^cs_test_/);
 
     const wh = await post(app, "/v1/webhooks/stripe", {

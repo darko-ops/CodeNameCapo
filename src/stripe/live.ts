@@ -29,44 +29,82 @@ export class LiveStripeGateway implements StripeGateway {
   }
 
   async createCheckout(params: CheckoutParams): Promise<CheckoutResult> {
-    // Connect Standard (Spec §7): when the merchant has a connected account, the
-    // subscription is created directly on it (Stripe-Account header), and Bouncr
-    // takes its cut as a Connect application fee on each invoice. The fee only
-    // makes sense on a direct charge to a connected account — settling to the
-    // platform's own account (demo / no Connect) carries no fee.
-    const options = params.connectedAccountId
-      ? { stripeAccount: params.connectedAccountId }
-      : undefined;
+    // Connect direct charges (Spec settlement §3): the charge is created DIRECTLY
+    // on the merchant's connected account (Stripe-Account header), so the merchant
+    // is merchant-of-record; Bouncr takes only an application fee. Money never
+    // lands on Bouncr's own account. The idempotency key collapses double-taps to
+    // a single session.
+    const options: Stripe.RequestOptions = {
+      ...(params.connectedAccountId ? { stripeAccount: params.connectedAccountId } : {}),
+      ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
+    };
     const feePercent = connectFee(params.connectedAccountId, params.applicationFeePercent);
+    const amountCents = Math.round(params.amount * 100);
+    // Sessions expire so an abandoned checkout cleans up and the deal can re-mint.
+    const expiresUnix = Math.floor(Date.now() / 1000) + 30 * 60;
 
-    const session = await this.stripe.checkout.sessions.create(
-      {
-        mode: "subscription",
-        success_url: params.successUrl,
-        cancel_url: params.cancelUrl,
-        client_reference_id: params.endUserRef,
-        metadata: { dealId: params.dealId, planKey: params.planKey },
-        subscription_data: {
-          metadata: { dealId: params.dealId },
-          ...(feePercent ? { application_fee_percent: feePercent } : {}),
-        },
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: params.currency,
-              product_data: { name: `${params.productName} — ${params.planKey} (negotiated)` },
-              // Stripe amounts are in the currency's minor unit (cents).
-              unit_amount: Math.round(params.amount * 100),
-              recurring: { interval: "month" },
-            },
+    const common = {
+      success_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+      client_reference_id: params.endUserRef,
+      expires_at: expiresUnix,
+      metadata: { dealId: params.dealId, planKey: params.planKey },
+    } as const;
+
+    let session: Stripe.Checkout.Session;
+    if (params.interval === "one_time") {
+      // One-time (day pass): a single PaymentIntent on the connected account,
+      // Bouncr's cut as a fixed application_fee_amount.
+      const feeAmount = feePercent ? Math.round(amountCents * (feePercent / 100)) : 0;
+      session = await this.stripe.checkout.sessions.create(
+        {
+          ...common,
+          mode: "payment",
+          payment_intent_data: {
+            metadata: { dealId: params.dealId },
+            ...(feeAmount > 0 ? { application_fee_amount: feeAmount } : {}),
           },
-        ],
-      },
-      options,
-    );
+          line_items: [
+            {
+              quantity: 1,
+              price_data: {
+                currency: params.currency,
+                product_data: { name: `${params.productName} — ${params.planKey} (negotiated)` },
+                unit_amount: amountCents,
+              },
+            },
+          ],
+        },
+        options,
+      );
+    } else {
+      // Recurring: a subscription on the connected account with a per-invoice
+      // application_fee_percent.
+      session = await this.stripe.checkout.sessions.create(
+        {
+          ...common,
+          mode: "subscription",
+          subscription_data: {
+            metadata: { dealId: params.dealId },
+            ...(feePercent ? { application_fee_percent: feePercent } : {}),
+          },
+          line_items: [
+            {
+              quantity: 1,
+              price_data: {
+                currency: params.currency,
+                product_data: { name: `${params.productName} — ${params.planKey} (negotiated)` },
+                unit_amount: amountCents,
+                recurring: { interval: "month" },
+              },
+            },
+          ],
+        },
+        options,
+      );
+    }
     if (!session.url) throw new Error("Stripe did not return a Checkout URL");
-    return { checkoutId: session.id, url: session.url };
+    return { checkoutId: session.id, url: session.url, expiresAt: (session.expires_at ?? expiresUnix) * 1000 };
   }
 
   async updateSubscription(params: SubscriptionUpdateParams): Promise<{ ok: true }> {

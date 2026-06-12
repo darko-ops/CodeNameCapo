@@ -4,6 +4,7 @@ import { MemoryStore } from "./store/memory.js";
 import { FakeStripeGateway } from "./stripe/fake.js";
 import { makeTemplateNegotiator } from "./llm/negotiator.js";
 import { demoPlan } from "./config.js";
+import { ProofSigner, mintProof } from "./proof.js";
 import type { WebhookEvent } from "./stripe/gateway.js";
 
 const PLAN = demoPlan(); // floor 8, target 22, anchor 48, maxRounds 6
@@ -25,6 +26,12 @@ const completed = (checkoutId: string, sub = "sub_test_1"): WebhookEvent => ({
   checkoutId,
   subscriptionId: sub,
 });
+
+// Drive the hosted-checkout Pay step from an accept URL (creates the Stripe session).
+async function pay(service: BouncrService, accepted: { checkoutUrl?: string }) {
+  const u = new URL(accepted.checkoutUrl!);
+  return service.startCheckout(u.pathname.split("/checkout/")[1]!, u.searchParams.get("proof")!);
+}
 
 describe("createSession", () => {
   it("opens a session at the anchor and records the opener turn", async () => {
@@ -77,6 +84,9 @@ describe("full negotiate → accept → settle flow", () => {
     expect(t2.checkoutUrl).toBeDefined();
     expect(t2.dealId).toBeDefined();
     expect(t2.status).toBe("accepted");
+
+    // Buyer hits Pay on the hosted page → the Stripe session is created.
+    await pay(service, t2);
 
     // Deal is pending; Stripe was asked for the negotiated amount.
     const deal = await store.getDeal(t2.dealId!);
@@ -159,5 +169,74 @@ describe("guardrails through the service", () => {
     await expect(service.postMessage(sessionId, "hi")).rejects.toMatchObject({ code: "conflict" });
     await expect(service.postMessage("missing", "hi")).rejects.toMatchObject({ code: "not_found" });
     await expect(service.getDeal("missing")).rejects.toBeInstanceOf(ServiceError);
+  });
+});
+
+describe("hosted checkout settlement (proof → Connect)", () => {
+  it("Pay creates the Stripe session on the deal; returning resumes it (no second session)", async () => {
+    const { store, stripe, service } = makeService();
+    const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "u" });
+    const acc = await service.acceptCurrent(sessionId);
+
+    const first = await pay(service, acc);
+    expect(first.state).toBe("redirect");
+    expect(stripe.checkouts.length).toBe(1);
+    const deal = await store.getDeal(acc.dealId);
+    expect(deal?.checkoutStatus).toBe("pending");
+    expect(deal?.stripeCheckoutId).toMatch(/^cs_test_/);
+
+    // Returning to the page resumes the OPEN session — no new proof, no new session.
+    const view = await service.getCheckoutView(acc.dealId, undefined);
+    expect(view).toMatchObject({ state: "resume", url: deal!.checkoutUrl });
+  });
+
+  it("single-use: replaying the same proof never creates a second session (resumes instead)", async () => {
+    const { stripe, service } = makeService();
+    const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "u" });
+    const acc = await service.acceptCurrent(sessionId);
+    await pay(service, acc);
+    await pay(service, acc); // same proof again
+    expect(stripe.checkouts.length).toBe(1); // no double-burn, no parallel session
+  });
+
+  it("re-mints a fresh proof (same amount) when the proof is invalid but the deal is open", async () => {
+    const { stripe, service } = makeService();
+    const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "u" });
+    const acc = await service.acceptCurrent(sessionId);
+    const view = await service.getCheckoutView(acc.dealId, "garbage");
+    expect(view.state).toBe("remint");
+    if (view.state === "remint") {
+      expect(view.url).toContain(`/checkout/${acc.dealId}?proof=`);
+      const r = await pay(service, { checkoutUrl: view.url }); // the re-minted proof pays
+      expect(r.state).toBe("redirect");
+      expect(stripe.checkouts.at(-1)!.amount).toBe(acc.price); // same engine amount
+    }
+  });
+
+  it("the negotiator only ever produces MONTHLY subscriptions (never one_time)", async () => {
+    const { stripe, service } = makeService();
+    const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "u" });
+    await pay(service, await service.acceptCurrent(sessionId));
+    expect(stripe.checkouts.at(-1)!.interval).toBe("month");
+  });
+
+  it("one-time rail: a hand-minted one_time proof settles via the PaymentIntent branch", async () => {
+    const signer = ProofSigner.ephemeral("t");
+    const store = new MemoryStore([PLAN]);
+    const stripe = new FakeStripeGateway();
+    const service = new BouncrService({
+      store, stripe, negotiator: makeTemplateNegotiator(), baseUrl: "http://x", proofSigner: signer,
+    });
+    const deal = await store.createDeal({
+      sessionId: "s", merchantId: PLAN.merchantId, planId: PLAN.id, endUserRef: "u",
+      price: 9, currency: "usd", status: "pending", kind: "initial",
+      stripeCheckoutId: null, stripeSubscriptionId: null, checkoutStatus: "none",
+      renegSessionId: null, settledAt: null,
+    });
+    const { token } = mintProof(signer, { deal, plan: PLAN, nowMs: Date.now(), interval: "one_time" });
+    const r = await service.startCheckout(deal.id, token);
+    expect(r.state).toBe("redirect");
+    expect(stripe.checkouts.at(-1)!.interval).toBe("one_time");
+    expect(stripe.checkouts.at(-1)!.amount).toBe(9);
   });
 });

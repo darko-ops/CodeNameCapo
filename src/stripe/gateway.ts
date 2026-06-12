@@ -18,6 +18,10 @@ export interface CheckoutParams {
   dealId: string;
   successUrl: string;
   cancelUrl: string;
+  /** "month" → recurring subscription; "one_time" → single PaymentIntent (day pass). */
+  interval: "month" | "one_time";
+  /** Stripe idempotency key — collapses double-taps to one session (per deal). */
+  idempotencyKey?: string;
   /** Connected Stripe account (acct_...) to settle into — Connect (Spec §7, Phase 3). */
   connectedAccountId?: string | null;
   /**
@@ -49,6 +53,8 @@ export interface AccountStatus {
 export interface CheckoutResult {
   checkoutId: string;
   url: string;
+  /** When the Stripe Checkout Session expires (ms) — abandoned sessions re-mint. */
+  expiresAt?: number | null;
 }
 
 /** Normalized webhook event — only what Phase 1 settlement cares about. */
