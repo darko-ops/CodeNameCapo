@@ -153,7 +153,7 @@
 
       <div class="seclabel">Willingness to pay</div>
       <div class="card chart">
-        <p class="meta" style="margin:0 0 10px">Each bar is a completed purchase — how much that customer actually paid.</p>
+        <p class="meta" style="margin:0 0 10px">Each bar is a completed purchase — how much that customer actually paid. Color shows where it landed in your band: <span style="color:#F87171">near floor</span> → <span style="color:#FBBF24">middle</span> → <span style="color:#34D399">near list</span>.</p>
         <canvas id="hist" height="220"></canvas>
         <div class="meta" id="hist-legend" style="margin-top:8px"></div>
       </div>
@@ -460,8 +460,20 @@
   }
 
   // WTP chart: one bar per completed purchase. x = the customer, y = the price
-  // they settled at. Horizontal dashed lines mark floor / target / list.
+  // they settled at. Horizontal dashed lines mark floor / target / list. Bars are
+  // colored by where they land in the band (floor=red → mid=amber → list=mint)
+  // and are clickable — each opens that customer's negotiation transcript.
   function shortUser(u) { u = String(u == null ? "anon" : u); return u.length > 11 ? u.slice(0, 10) + "…" : u; }
+  // Heatmap color for a settled price within [floor, list]: red → amber → mint.
+  function bandColor(price, ref) {
+    const span = Math.max(1e-6, ref.list - ref.floor);
+    let t = (price - ref.floor) / span; t = Math.max(0, Math.min(1, t));
+    const L = (a, b, u) => Math.round(a + (b - a) * u);
+    const hex = (r, g, b) => "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    if (t < 0.5) { const u = t / 0.5; return hex(L(248, 251, u), L(113, 191, u), L(113, 36, u)); } // #F87171→#FBBF24
+    const u = (t - 0.5) / 0.5; return hex(L(251, 52, u), L(191, 211, u), L(36, 153, u)); // #FBBF24→#34D399
+  }
+  let WTP_HIT = null; // { padL, slot, data } — for canvas click hit-testing
   function renderHist(a) {
     const cv = $("hist"); if (!cv.clientWidth) return; const ctx = cv.getContext("2d");
     const ref = a.reference, data = (a.settlements || []).slice();
@@ -496,6 +508,7 @@
     refLine(ref.floor, "#f87171", "floor");
 
     if (!data.length) {
+      WTP_HIT = null;
       ctx.fillStyle = "#6B7280"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.font = "500 20px ui-sans-serif, sans-serif";
       ctx.fillText("No completed purchases yet", padL + plotW / 2, padT + plotH / 2);
@@ -503,11 +516,12 @@
       return;
     }
 
-    // bars — one per settled deal
+    // bars — one per settled deal, colored by where the price lands in the band
     const slot = plotW / data.length, bw = Math.min(slot * 0.6, 70);
+    WTP_HIT = { padL, slot, data };
     data.forEach((d, i) => {
       const cx = padL + slot * i + slot / 2, yy = y(d.price);
-      ctx.fillStyle = "#7C3AED"; ctx.fillRect(cx - bw / 2, yy, bw, base - yy);
+      ctx.fillStyle = bandColor(d.price, ref); ctx.fillRect(cx - bw / 2, yy, bw, base - yy);
       if (slot > 40) { // price on top
         ctx.fillStyle = "#E5E7EB"; ctx.font = "700 16px ui-sans-serif, sans-serif";
         ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("$" + d.price, cx, yy - 5);
@@ -518,7 +532,21 @@
       }
     });
     const n = data.length;
-    $("hist-legend").textContent = `${n} completed purchase${n === 1 ? "" : "s"} · x: customer, y: price settled. Dashed lines: floor / target / list.`;
+    $("hist-legend").innerHTML = `${n} completed purchase${n === 1 ? "" : "s"} · x: customer, y: price settled · <span style="color:var(--accent2)">click a bar to open the transcript</span>. Dashed lines: floor / target / list.`;
+
+    // Map a click/hover x to the bar under it (canvas is 2× its CSS size).
+    if (!cv._wtpBound) {
+      cv._wtpBound = true;
+      const barAt = (e) => {
+        if (!WTP_HIT) return -1;
+        const r = cv.getBoundingClientRect();
+        const mx = (e.clientX - r.left) * (cv.width / r.width);
+        const i = Math.floor((mx - WTP_HIT.padL) / WTP_HIT.slot);
+        return i >= 0 && i < WTP_HIT.data.length ? i : -1;
+      };
+      cv.addEventListener("click", (e) => { const i = barAt(e); if (i >= 0) openTranscript(WTP_HIT.data[i].sessionId); });
+      cv.addEventListener("mousemove", (e) => { cv.style.cursor = barAt(e) >= 0 ? "pointer" : "default"; });
+    }
   }
 
   async function renderSessions() {

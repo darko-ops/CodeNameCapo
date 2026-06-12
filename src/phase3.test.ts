@@ -218,6 +218,7 @@ describe("WTP analytics (Spec §11)", () => {
     // One settled purchase → one WTP bar: user "a" at the settled price.
     expect(an.settlements).toHaveLength(1);
     expect(an.settlements[0]).toMatchObject({ user: "a", price: ask });
+    expect(an.settlements[0]!.sessionId).toBe(a.sessionId); // bar links to the transcript
     expect(an.closing.medianPrice).toBe(ask);
     expect(an.closing.revenue).toBe(ask);
     expect(an.reference).toMatchObject({ list: 30, target: 32, floor: 22 });

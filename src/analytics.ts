@@ -26,8 +26,9 @@ export interface Analytics {
     closingPrices: number[]; // each settled/accepted deal price
   };
   /** One entry per settled deal (completed purchase) — the WTP bar chart:
-   *  x = the user who bought, y = the price they settled at. Oldest first. */
-  settlements: { user: string; price: number; at: number }[];
+   *  x = the user who bought, y = the price they settled at. Oldest first.
+   *  sessionId lets the dashboard open that customer's transcript on click. */
+  settlements: { user: string; price: number; at: number; sessionId: string }[];
   closing: {
     avgRoundsToClose: number | null;
     medianPrice: number | null;
@@ -93,7 +94,7 @@ export async function computeAnalytics(store: Store, plan: Plan): Promise<Analyt
   const settlements = settledDeals
     .slice()
     .sort((a, b) => (a.settledAt ?? a.createdAt) - (b.settledAt ?? b.createdAt))
-    .map((d) => ({ user: d.endUserRef, price: d.price, at: d.settledAt ?? d.createdAt }));
+    .map((d) => ({ user: d.endUserRef, price: d.price, at: d.settledAt ?? d.createdAt, sessionId: d.sessionId }));
 
   // --- closing stats -------------------------------------------------------
   const acceptedSessions = sessions.filter((s) => s.status === "accepted" || s.status === "settled");
