@@ -54,7 +54,13 @@
   .kpi.accent .big { color:var(--accent2); } .kpi.mint .big { color:var(--mint); }
 
   /* chart */
+  .chart { position:relative; }
   .chart canvas { width:100%; display:block; }
+  .wtp-tip { position:absolute; z-index:5; pointer-events:none; opacity:0; transition:opacity .12s; background:#1b1b27; border:1px solid var(--line); border-radius:9px; padding:8px 11px; font-size:12.5px; line-height:1.45; white-space:nowrap; box-shadow:0 8px 24px rgba(0,0,0,.45); transform:translate(-50%,-118%); }
+  .wtp-tip.show { opacity:1; }
+  .wtp-tip .u { font-weight:700; color:var(--text); }
+  .wtp-tip .p { font-weight:700; }
+  .wtp-tip .d { color:var(--muted); }
 
   /* tactics */
   .tactics div { display:flex; align-items:center; gap:10px; margin:8px 0; font-size:13px; }
@@ -155,6 +161,7 @@
       <div class="card chart">
         <p class="meta" style="margin:0 0 10px">Each bar is a completed purchase — how much that customer actually paid. Color shows where it landed in your band: <span style="color:#F87171">near floor</span> → <span style="color:#FBBF24">middle</span> → <span style="color:#34D399">near list</span>.</p>
         <canvas id="hist" height="220"></canvas>
+        <div class="wtp-tip" id="wtp-tip"></div>
         <div class="meta" id="hist-legend" style="margin-top:8px"></div>
       </div>
 
@@ -537,6 +544,7 @@
     // Map a click/hover x to the bar under it (canvas is 2× its CSS size).
     if (!cv._wtpBound) {
       cv._wtpBound = true;
+      const tip = $("wtp-tip");
       const barAt = (e) => {
         if (!WTP_HIT) return -1;
         const r = cv.getBoundingClientRect();
@@ -544,8 +552,20 @@
         const i = Math.floor((mx - WTP_HIT.padL) / WTP_HIT.slot);
         return i >= 0 && i < WTP_HIT.data.length ? i : -1;
       };
+      const fmtDate = (ms) => { try { return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); } catch (_) { return ""; } };
       cv.addEventListener("click", (e) => { const i = barAt(e); if (i >= 0) openTranscript(WTP_HIT.data[i].sessionId); });
-      cv.addEventListener("mousemove", (e) => { cv.style.cursor = barAt(e) >= 0 ? "pointer" : "default"; });
+      cv.addEventListener("mousemove", (e) => {
+        const i = barAt(e);
+        cv.style.cursor = i >= 0 ? "pointer" : "default";
+        if (i < 0) { tip.classList.remove("show"); return; }
+        const d = WTP_HIT.data[i];
+        const card = cv.parentElement, cr = card.getBoundingClientRect();
+        const x = Math.max(60, Math.min(cr.width - 60, e.clientX - cr.left));
+        tip.style.left = x + "px"; tip.style.top = (e.clientY - cr.top) + "px";
+        tip.innerHTML = `<div class="u">${escapeHtml(d.user)}</div><div class="p">$${d.price}</div><div class="d">${fmtDate(d.at)}</div>`;
+        tip.classList.add("show");
+      });
+      cv.addEventListener("mouseleave", () => tip.classList.remove("show"));
     }
   }
 
