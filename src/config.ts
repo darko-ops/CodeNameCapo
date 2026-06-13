@@ -99,8 +99,48 @@ export interface BuiltService {
   authSecret: string;
 }
 
+/**
+ * LIVE-mode boot guard. When real Stripe is configured (STRIPE_SECRET_KEY +
+ * STRIPE_WEBHOOK_SECRET — the same signal that selects the live gateway), every
+ * security-critical secret MUST be present and not a default/placeholder, or we
+ * refuse to boot with a clear list of what's wrong. In SANDBOX (no Stripe keys)
+ * the defaults are fine, so local dev and the fake-gateway demo need zero setup.
+ *
+ * Throws a single Error naming exactly which vars are missing/defaulted — never a
+ * silent live-mode fallback to "bouncrdemo" / an ephemeral signing key.
+ */
+const PLACEHOLDER_RE = /replace|changeme|your[-_]|placeholder|example|x{4,}/i;
+export function assertLiveBootSecrets(env: NodeJS.ProcessEnv = process.env): void {
+  const liveMode = Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
+  if (!liveMode) return; // sandbox / tests — defaults allowed
+
+  const flag = (name: string, val: string | undefined, def?: string): string | null => {
+    if (!val) return `${name} is unset`;
+    if (def && val === def) return `${name} is still the default ("${def}")`;
+    if (PLACEHOLDER_RE.test(val)) return `${name} looks like an unreplaced placeholder`;
+    return null;
+  };
+
+  const problems = [
+    flag("BOUNCR_DEMO_MERCHANT_PASSWORD", env.BOUNCR_DEMO_MERCHANT_PASSWORD, "bouncrdemo"),
+    flag("BOUNCR_AUTH_SECRET", env.BOUNCR_AUTH_SECRET), // unset ⇒ ephemeral; sessions die + insecure
+    flag("BOUNCR_PROOF_PRIVATE_KEY", env.BOUNCR_PROOF_PRIVATE_KEY), // unset ⇒ ephemeral signing key
+    flag("STRIPE_SECRET_KEY", env.STRIPE_SECRET_KEY),
+    flag("STRIPE_WEBHOOK_SECRET", env.STRIPE_WEBHOOK_SECRET),
+  ].filter((p): p is string => p !== null);
+
+  if (problems.length) {
+    throw new Error(
+      "Refusing to boot in LIVE mode (real Stripe is configured) with insecure or missing secrets:\n" +
+        problems.map((p) => `  - ${p}`).join("\n") +
+        "\nSet these (see .env.example), or run in sandbox by omitting STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET.",
+    );
+  }
+}
+
 /** Build the service from environment variables, falling back to sandbox parts. */
 export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): BuiltService {
+  assertLiveBootSecrets(env); // fail fast in live mode before constructing anything
   const plan = demoPlan();
 
   // Dashboard-token signing secret. A stable env value keeps sessions valid
