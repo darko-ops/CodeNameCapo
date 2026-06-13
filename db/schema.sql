@@ -40,7 +40,7 @@ create table if not exists bouncr.plans (
   currency      text not null default 'usd',
   config_jsonb  jsonb not null,          -- engine Config
   persona_jsonb jsonb not null,          -- Persona
-  policy_jsonb  jsonb not null default '{"cooldownHours":72,"maxMessages":30}',  -- NegotiationPolicy (§12)
+  policy_jsonb  jsonb not null default '{"cooldownHours":72,"maxMessages":2000,"rateLimitPerMin":12}',  -- NegotiationPolicy (§12)
   usage_jsonb   jsonb not null default '{"bandCeiling":1000,"breachCyclesRequired":3,"costPerUnit":0.004,"costPlusMargin":1.25,"renegAnchorMultiplier":1.7,"downwardEnabled":false,"downwardFloorRatio":0.1,"downwardMinCycles":3}',  -- UsagePolicy (§6)
   version       integer not null default 1,
   active        boolean not null default true,

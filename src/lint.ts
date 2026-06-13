@@ -61,7 +61,14 @@ export function lintConfig(c: Config, policy?: NegotiationPolicy): LintResult {
   if (policy) {
     if (!(policy.cooldownHours >= 0)) errors.push(`policy.cooldownHours must be ≥ 0 (got ${policy.cooldownHours})`);
     if (!(policy.maxMessages >= 1)) errors.push(`policy.maxMessages must be ≥ 1 (got ${policy.maxMessages})`);
-    if (policy.maxMessages > 100) warnings.push(`policy.maxMessages ${policy.maxMessages} is high — invites siege behavior`);
+    // maxMessages is now an absolute BACKSTOP (the wallet guard is rate-based), so a
+    // high value is expected; warn only if it's too LOW to host a long human haggle.
+    if (policy.maxMessages < 100)
+      warnings.push(`policy.maxMessages ${policy.maxMessages} is low for a backstop — a long legitimate haggle could hit it (the rate guard, not this, handles siege)`);
+    if (policy.rateLimitPerMin !== undefined && !(policy.rateLimitPerMin > 0))
+      errors.push(`policy.rateLimitPerMin must be > 0 when set (got ${policy.rateLimitPerMin})`);
+    if (policy.rateLimitPerMin !== undefined && policy.rateLimitPerMin < 4)
+      warnings.push(`policy.rateLimitPerMin ${policy.rateLimitPerMin} is low — a fast human could be throttled mid-haggle`);
   }
 
   return { ok: errors.length === 0, errors, warnings };

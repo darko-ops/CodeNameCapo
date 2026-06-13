@@ -43,17 +43,9 @@ async function pay(service: BouncrService, accepted: { checkoutUrl?: string }) {
 }
 
 describe("walkaway cooldown (Spec §12)", () => {
-  it("blocks a new session for the same user+plan after a walk", async () => {
-    const { plan, store, service } = setup({ maxMessages: 1 }); // force a quick walk
-    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "abuser" });
-    // First message is within cap (0 prior); second hits the cap → walk.
-    await service.postMessage(sessionId, "$1");
-    const walked = await service.postMessage(sessionId, "$1 again");
-    expect(walked.action.type).toBe("walk");
-
-    const cd = await store.getCooldown(plan.id, "abuser");
-    expect(cd).toBeGreaterThan(Date.now());
-
+  it("a user in cooldown (from an abuse/expiry walk) can't start a new session", async () => {
+    const { plan, store, service } = setup();
+    await store.setCooldown(plan.id, "abuser", Date.now() + 60_000);
     await expect(service.createSession({ planId: plan.id, endUserRef: "abuser" })).rejects.toMatchObject({
       code: "conflict",
     });
@@ -61,28 +53,37 @@ describe("walkaway cooldown (Spec §12)", () => {
     await expect(service.createSession({ planId: plan.id, endUserRef: "someone_else" })).resolves.toBeTruthy();
   });
 
-  it("a zero-hour cooldown does not block", async () => {
-    const { plan, service } = setup({ cooldownHours: 0, maxMessages: 1 });
-    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "u" });
-    await service.postMessage(sessionId, "$1");
-    await service.postMessage(sessionId, "$1");
+  it("an expired cooldown does not block", async () => {
+    const { plan, store, service } = setup();
+    await store.setCooldown(plan.id, "u", Date.now() - 1000); // already past
     await expect(service.createSession({ planId: plan.id, endUserRef: "u" })).resolves.toBeTruthy();
   });
 });
 
-describe("message cap (Spec §12 anti-siege)", () => {
-  it("ends the session as a walk once the cap is reached", async () => {
-    const { plan, service } = setup({ maxMessages: 3 });
+describe("message cap (Spec §12) — locks in the lowest ask, never walks", () => {
+  it("at the cap, holds the lowest haggled price (open, no cooldown) and it stays takeable", async () => {
+    const { plan, store, service } = setup({ maxMessages: 3 });
     const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "u" });
-    const actions: string[] = [];
-    for (let i = 0; i < 5; i++) {
+
+    // Haggle credibly past the cap. Vini drops, then locks in — never walks.
+    let last;
+    for (let i = 0; i < 6; i++) {
       const s = await service.getSessionView(sessionId);
       if (s.status !== "open") break;
-      actions.push((await service.postMessage(sessionId, "$2")).action.type);
+      last = await service.postMessage(sessionId, "25 bucks");
     }
-    // 3 messages allowed; the 4th attempt walks.
-    expect(actions.filter((a) => a === "walk").length).toBe(1);
-    expect(actions.length).toBe(4);
+    expect(last!.action.type).not.toBe("walk"); // the cap LOCKS IN, it doesn't auto-close
+    const view = await service.getSessionView(sessionId);
+    expect(view.status).toBe("open"); // session stays open at the lock-in
+    expect(last!.currentAsk).toBeLessThan(48); // and it's the price they haggled DOWN to
+    // No cooldown — the buyer is never locked out for haggling hard.
+    expect(await store.getCooldown(plan.id, "u")).toBeNull();
+
+    // The locked-in price stays takeable: saying yes seals it at that number.
+    const accepted = await service.postMessage(sessionId, "ok deal, lock it in");
+    expect(accepted.action.type).toBe("accept");
+    expect(accepted.checkoutUrl).toBeDefined();
+    expect(accepted.currentAsk).toBe(last!.currentAsk); // sealed at the lowest, not the anchor
   });
 });
 

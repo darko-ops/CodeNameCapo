@@ -716,16 +716,13 @@ describe("dashboard + analytics + Connect endpoints (Spec §7, §11, §12)", () 
   });
 
   it("returns 409 with retry_at when a user is in cooldown", async () => {
-    // build an app whose plan walks fast (maxMessages 1)
-    const store = new MemoryStore([{ ...PLAN, policy: { cooldownHours: 72, maxMessages: 1 } }], []);
-    // demo merchant needed for closeDeal lookups, but no deal here
+    const store = new MemoryStore([{ ...PLAN, policy: { cooldownHours: 72, maxMessages: 80 } }], []);
     const stripe = new FakeStripeGateway();
     const service = new BouncrService({ store, stripe, negotiator: makeTemplateNegotiator(), baseUrl: "http://x" });
     const app = buildApp({ service, stripe, apiKey: null, authSecret: AUTH_SECRET, mailer: new CaptureMailer() });
 
-    const s = await startSession(app);
-    await post(app, `/v1/sessions/${s.id}/messages`, { message: "$1" }, tok(s.token));
-    await post(app, `/v1/sessions/${s.id}/messages`, { message: "$1" }, tok(s.token)); // walks
+    // A cooldown (set by an abuse/expiry walk) blocks a new session for that user.
+    await store.setCooldown(PLAN.id, "u", Date.now() + 72 * 3_600_000);
     const blocked = await post(app, "/v1/sessions", { plan_id: PLAN.id, end_user_ref: "u" });
     expect(blocked.status).toBe(409);
     const body = await blocked.json();

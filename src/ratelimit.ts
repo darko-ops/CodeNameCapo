@@ -64,3 +64,22 @@ export class RateLimiter {
     for (const [k, w] of this.windows) if (t >= w.resetAt) this.windows.delete(k);
   }
 }
+
+/**
+ * Per-session message-VELOCITY guard (wallet protection), computed from persisted
+ * turn timestamps — so it's exact across serverless instances and survives
+ * restarts (unlike the in-memory RateLimiter above). True ⇒ the incoming message
+ * would exceed `perMin` user messages in the trailing 60s, so it should be
+ * throttled (a cheap canned reply, no LLM). Pure & deterministic.
+ *
+ * This keys off RATE, not lifetime volume: a human grinding a haggle over hours or
+ * days is always slow and never trips it; a bot firing messages fast trips it
+ * instantly and hits a free wall. `perMin <= 0` disables the guard.
+ */
+export function messageRateExceeded(userMsgTimestamps: number[], now: number, perMin: number): boolean {
+  if (!(perMin > 0)) return false;
+  const since = now - 60_000;
+  let inWindow = 0;
+  for (const t of userMsgTimestamps) if (t > since) inWindow++;
+  return inWindow >= perMin;
+}

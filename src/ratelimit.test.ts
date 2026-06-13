@@ -1,5 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { RateLimiter } from "./ratelimit.js";
+import { RateLimiter, messageRateExceeded } from "./ratelimit.js";
+
+describe("messageRateExceeded — per-session velocity wallet guard", () => {
+  const NOW = 10_000_000;
+
+  it("trips on a fast burst (>= perMin within the trailing minute)", () => {
+    const burst = Array.from({ length: 12 }, (_, i) => NOW - i * 1000); // 12 in 12s
+    expect(messageRateExceeded(burst, NOW, 12)).toBe(true);
+    expect(messageRateExceeded(burst.slice(0, 11), NOW, 12)).toBe(false); // 11 < 12, still ok
+  });
+
+  it("NEVER trips a slow, days-long human haggle", () => {
+    // 200 messages, one every 5 minutes — a genuine multi-day grind.
+    const slow = Array.from({ length: 200 }, (_, i) => NOW - i * 5 * 60_000);
+    expect(messageRateExceeded(slow, NOW, 12)).toBe(false);
+    // even a brisk human (one every ~6s) stays under a 12/min limit
+    const brisk = Array.from({ length: 9 }, (_, i) => NOW - i * 6000);
+    expect(messageRateExceeded(brisk, NOW, 12)).toBe(false);
+  });
+
+  it("only counts messages inside the 60s window (old ones age out → resumes)", () => {
+    const ts = [NOW - 70_000, NOW - 65_000, ...Array.from({ length: 5 }, (_, i) => NOW - i * 1000)];
+    expect(messageRateExceeded(ts, NOW, 6)).toBe(false); // only 5 are recent
+  });
+
+  it("is disabled when perMin <= 0", () => {
+    expect(messageRateExceeded([NOW, NOW, NOW], NOW, 0)).toBe(false);
+  });
+});
 
 describe("RateLimiter", () => {
   it("allows up to max within a window, then blocks, then resets", () => {

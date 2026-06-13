@@ -382,3 +382,44 @@ describe("updatePlan — Vini/discovery config (renderer-only)", () => {
     expect(after.discovery?.questions[0]?.field).toBe("use_case"); // preserved
   });
 });
+
+describe("rate-based wallet guard (Spec §12) — velocity, not volume", () => {
+  it("throttles a fast burst with a canned NO-LLM reply, price untouched, session open", async () => {
+    const plan = { ...demoPlan(), policy: { ...demoPlan().policy, rateLimitPerMin: 3, maxMessages: 2000 } };
+    const store = new MemoryStore([plan]);
+    const stripe = new FakeStripeGateway();
+    const base = makeTemplateNegotiator();
+    let turnCalls = 0;
+    const negotiator = { opener: base.opener, turn: async (a: Parameters<typeof base.turn>[0]) => { turnCalls++; return base.turn(a); } };
+    const service = new BouncrService({ store, stripe, negotiator, baseUrl: "http://x" });
+
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "u" });
+    // First 3 in the burst → real negotiation (the LLM/negotiator runs each time).
+    await service.postMessage(sessionId, "$25");
+    await service.postMessage(sessionId, "$25");
+    const third = await service.postMessage(sessionId, "$25");
+    expect(turnCalls).toBe(3);
+    const askBefore = third.currentAsk;
+
+    // 4th in the same burst trips the rate guard → THROTTLE: no negotiator call,
+    // canned reply, price/state untouched, session stays open.
+    const throttled = await service.postMessage(sessionId, "$25");
+    expect(turnCalls).toBe(3); // the negotiator (LLM) was NOT invoked
+    expect(throttled.reply.toLowerCase()).toMatch(/easy|slow down|one at a time/);
+    expect(throttled.currentAsk).toBe(askBefore); // a pause, not a concession
+    expect(throttled.status).toBe("open");
+    expect(throttled.action.type).toBe("hold");
+  });
+
+  it("a long haggle UNDER the rate is never throttled (full negotiation throughout)", async () => {
+    const plan = { ...demoPlan(), policy: { ...demoPlan().policy, rateLimitPerMin: 100, maxMessages: 2000 } };
+    const store = new MemoryStore([plan]);
+    const base = makeTemplateNegotiator();
+    let turnCalls = 0;
+    const negotiator = { opener: base.opener, turn: async (a: Parameters<typeof base.turn>[0]) => { turnCalls++; return base.turn(a); } };
+    const service = new BouncrService({ store, stripe: new FakeStripeGateway(), negotiator, baseUrl: "http://x" });
+    const { sessionId } = await service.createSession({ planId: plan.id, endUserRef: "u" });
+    for (let i = 0; i < 20; i++) await service.postMessage(sessionId, "come on, do better"); // numberless → holds open
+    expect(turnCalls).toBe(20); // every message got a real negotiation turn, none throttled
+  });
+});

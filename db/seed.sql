@@ -14,9 +14,9 @@ values (
   'merchant_demo',
   'pro_monthly',
   'usd',
-  '{"listPrice":30,"floorPrice":22,"targetPrice":32,"anchorMultiplier":1.6,"maxRounds":6,"maxDurationH":48,"acceptThreshold":0.92,"minConcession":1.0,"lambda":0.55}',
+  '{"listPrice":30,"floorPrice":22,"targetPrice":24,"anchorMultiplier":1.6,"maxRounds":6,"maxDurationH":48,"acceptThreshold":0.92,"minConcession":1.0,"lambda":0.55}',
   '{"name":"Vini","productName":"Obius","style":"sassy","roastLevel":2}',
-  '{"cooldownHours":72,"maxMessages":30}',
+  '{"cooldownHours":72,"maxMessages":2000,"rateLimitPerMin":12}',
   '{"bandCeiling":1000,"breachCyclesRequired":3,"costPerUnit":0.004,"costPlusMargin":1.25,"renegAnchorMultiplier":1.7,"downwardEnabled":false,"downwardFloorRatio":0.1,"downwardMinCycles":3}',
   1,
   true

@@ -72,7 +72,7 @@ export function demoPlan(): Plan {
       ],
       talkingPoints: [],
     },
-    policy: { cooldownHours: 72, maxMessages: 30 },
+    policy: { cooldownHours: 72, maxMessages: 2000, rateLimitPerMin: 12 },
     usage: {
       bandCeiling: 1000, // usage units / cycle; breach above this
       breachCyclesRequired: 3,

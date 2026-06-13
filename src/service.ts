@@ -35,6 +35,10 @@ import { ProofSigner, mintProof, type ProofVerifier, type ProofClaims, type Proo
 import { NoopNotifier, type EntitlementNotifier, type EntitlementPayload } from "./notify.js";
 import { lintConfig, type LintResult } from "./lint.js";
 import { buildRenegConfig, type RenegDirection, type RenegPlan } from "./reneg.js";
+import { messageRateExceeded } from "./ratelimit.js";
+
+/** Default wallet-guard rate when a plan's policy omits rateLimitPerMin. */
+const DEFAULT_RATE_LIMIT_PER_MIN = 12;
 
 export class ServiceError extends Error {
   constructor(
@@ -444,7 +448,7 @@ export class BouncrService {
       minConcession: Math.max(1, round2((listPrice - floorPrice) * 0.12)),
       lambda: 0.55,
     };
-    const policy = { cooldownHours: 72, maxMessages: 30 };
+    const policy = { cooldownHours: 72, maxMessages: 2000, rateLimitPerMin: 12 };
     const lint = lintConfig(config, policy);
     if (!lint.ok) throw new ServiceError("bad_request", `plan config invalid: ${lint.errors.join("; ")}`);
 
@@ -622,11 +626,23 @@ export class BouncrService {
     const { session, plan } = await this.requireOpenSession(sessionId);
     const now = this.now();
 
-    const history = await this.loadHistory(sessionId);
+    const turns = await this.store.listTurns(sessionId);
+    const history: ChatTurn[] = turns.map((t) => ({ role: t.role, text: t.rawText }));
+    const userMsgTimestamps = turns.filter((t) => t.role === "user").map((t) => t.createdAt);
 
-    // Anti-siege message cap (Spec §12): too many turns ends the session.
-    const userTurns = history.filter((t) => t.role === "user").length;
-    if (userTurns >= plan.policy.maxMessages) {
+    // Wallet guard keys off RATE (velocity), not lifetime volume (Spec §12). A
+    // days-long human haggle is slow and never punished; a bot firing fast hits a
+    // free canned wall instantly. Throttle is a PAUSE — it never touches the price,
+    // and full Vini resumes automatically once they slow to a human pace.
+    const perMin = plan.policy.rateLimitPerMin ?? DEFAULT_RATE_LIMIT_PER_MIN;
+    if (messageRateExceeded(userMsgTimestamps, now, perMin)) {
+      return this.throttle(session, text);
+    }
+
+    // Absolute backstop, far above any human haggle. On a cold-start session this
+    // LOCKS IN the lowest ask (price never lost); reneg grandfathers.
+    if (userMsgTimestamps.length >= plan.policy.maxMessages) {
+      if (session.kind === "initial") return this.lockInAtCap(session, text);
       return this.endWithWalk(session, plan, text, "message cap reached", now);
     }
 
@@ -1251,15 +1267,80 @@ export class BouncrService {
     }
   }
 
+  /**
+   * Wallet-guard THROTTLE (rate exceeded). A cheap canned hold — NO extractor, NO
+   * renderer, NO LLM call — just a DB write and an in-character "slow down". The
+   * negotiation state is untouched: price, round, status all unchanged. It's a
+   * pause, not a concession or a close; full Vini resumes automatically the moment
+   * the sender drops back under the rate (this turn just doesn't get a real reply).
+   */
+  private async throttle(session: SessionRecord, userText: string): Promise<TurnResponse> {
+    const f = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+    await this.store.addTurn({ sessionId: session.id, role: "user", rawText: userText, extracted: null, action: null });
+    const reply = `whoa, easy. one at a time, im not a vending machine. the number's still $${f(session.currentAsk)}/mo, slow down and talk to me.`;
+    const action: Action = { type: "hold", amount: session.currentAsk };
+    await this.store.addTurn({ sessionId: session.id, role: "bouncer", rawText: reply, extracted: null, action });
+    await this.store.appendEvent("turn", { sessionId: session.id, action: "throttle" });
+    return {
+      reply,
+      action,
+      round: session.round,
+      currentAsk: session.currentAsk,
+      status: "open",
+      expiresAt: session.expiresAt,
+      isFinal: false,
+    };
+  }
+
+  /**
+   * Cold-start message cap: LOCK IN the lowest standing ask instead of walking.
+   * The buyer keeps the price they worked down to — takeable any time via the
+   * "Take $X" button or by saying yes — and Vini stops budging (and stops spending
+   * LLM turns). The session stays OPEN, no cooldown, no hard close.
+   */
+  private async lockInAtCap(session: SessionRecord, userText: string): Promise<TurnResponse> {
+    const price = session.currentAsk;
+    const f = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+    await this.store.addTurn({ sessionId: session.id, role: "user", rawText: userText, extracted: null, action: null });
+
+    // Saying yes at the cap seals the deal at the standing ask (their lowest).
+    if (/\b(deal|yes|yeah|yep|sure|fine|sold|agreed|ok|okay|lock it in|take it|i'?ll take it|let'?s do it)\b/i.test(userText)) {
+      const settle = await this.acceptCurrent(session.id);
+      return {
+        reply: `locked in, $${f(price)}/mo. you earned it.`,
+        action: { type: "accept", amount: price },
+        round: session.round,
+        currentAsk: price,
+        status: "accepted",
+        expiresAt: session.expiresAt,
+        isFinal: false,
+        ...(settle.checkoutUrl ? { checkoutUrl: settle.checkoutUrl } : {}),
+        dealId: settle.dealId,
+      };
+    }
+
+    // Otherwise hold AT the lock-in — session stays open (no walk, no cooldown),
+    // and the widget keeps showing "Take $X" + "Keep haggling".
+    const reply = `ok you've genuinely haggled me to the bone. $${f(price)}/mo is the lowest i can do and it's locked in for you, grab it whenever. im not budging off $${f(price)} though, so it's that or keep me company.`;
+    const action: Action = { type: "counter", amount: price, isFinal: false };
+    await this.store.addTurn({ sessionId: session.id, role: "bouncer", rawText: reply, extracted: null, action });
+    await this.store.appendEvent("turn", { sessionId: session.id, action: "lock_in", price });
+    return {
+      reply,
+      action,
+      round: session.round,
+      currentAsk: price,
+      status: "open",
+      expiresAt: session.expiresAt,
+      isFinal: false,
+    };
+  }
+
   private engineState(s: SessionRecord): SessionState {
     // history is not consulted by decide(); reconstruct the decision-relevant fields.
     return { round: s.round, currentAsk: s.currentAsk, openedAt: s.openedAt, history: [] };
   }
 
-  private async loadHistory(sessionId: string): Promise<ChatTurn[]> {
-    const turns = await this.store.listTurns(sessionId);
-    return turns.map((t) => ({ role: t.role, text: t.rawText }));
-  }
 
   private statusForAction(action: Action): SessionRecord["status"] {
     if (action.type === "accept") return "accepted";

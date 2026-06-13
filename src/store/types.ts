@@ -41,8 +41,18 @@ export interface Merchant {
 export interface NegotiationPolicy {
   /** Hours a walked-away user must wait before a fresh session on this plan. */
   cooldownHours: number;
-  /** Hard cap on user messages per session (anti-siege; default ~30). */
+  /**
+   * ABSOLUTE per-session message backstop — far above any human haggle (thousands).
+   * The primary wallet guard is `rateLimitPerMin` (velocity); this is only a final
+   * ceiling. At it, a cold-start session locks in the lowest ask (never lost).
+   */
   maxMessages: number;
+  /**
+   * Wallet guard: messages/min before Vini throttles (a cheap canned no-LLM reply)
+   * until the sender slows back to a human pace. Keys off RATE, not volume, so a
+   * days-long human haggle is never punished. Optional (default applied in service).
+   */
+  rateLimitPerMin?: number;
 }
 
 /** Usage-band / renegotiation policy (Spec §4.1, §6). */
