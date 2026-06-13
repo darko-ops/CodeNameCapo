@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20 # package.json engines: node >=20
+          cache: npm
+
+      - run: npm ci
+
+      # The gate: typecheck + the full suite (incl. fast-check property tests).
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Tests run against MemoryStore + the fake Stripe gateway + the template
+      # negotiator — no DATABASE_URL, no STRIPE_*/ANTHROPIC_API_KEY needed. Any test
+      # that fails for lack of a secret is a test that shouldn't require one in CI.
+      - name: Tests (DATABASE_URL unset — MemoryStore path)
+        run: npm test
+
+      # The suite is DB-agnostic (tests construct MemoryStore directly); prove it
+      # stays green with DATABASE_URL set too, matching the local invariant.
+      - name: Tests (DATABASE_URL set — DB-agnostic check)
+        run: npm test
+        env:
+          DATABASE_URL: postgres://user:pass@localhost:5432/none
