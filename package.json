@@ -15,6 +15,7 @@
     "vercel-build": "npm run build",
     "migrate": "node scripts/migrate.mjs",
     "scan:plans": "node scripts/scan-plans.mjs",
+    "example:merchant": "node scripts/example-merchant-webhook.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
