@@ -17,6 +17,7 @@
     "scan:plans": "node scripts/scan-plans.mjs",
     "example:merchant": "node scripts/example-merchant-webhook.mjs",
     "test": "vitest run",
+    "test:pg": "vitest run src/store/postgres.pg.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "haggle": "tsx src/cli.ts",

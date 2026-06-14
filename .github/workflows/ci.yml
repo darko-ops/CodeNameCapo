@@ -34,3 +34,33 @@ jobs:
         run: npm test
         env:
           DATABASE_URL: postgres://user:pass@localhost:5432/none
+
+  # PostgresStore against REAL Postgres — the production datastore path. Proves the
+  # money-critical guarantees (atomic single-use under concurrency, the store
+  # contract) hold on real isolation, not just the in-memory Map. Gates merges.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: PostgresStore suite (real Postgres service container)
+        run: npm run test:pg
+        env:
+          # Dedicated throwaway DB — the harness resets the `bouncr` schema fresh.
+          BOUNCR_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
