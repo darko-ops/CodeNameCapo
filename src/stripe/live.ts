@@ -162,17 +162,33 @@ export class LiveStripeGateway implements StripeGateway {
     // as `event.account` — carried through for account-scoping in the service.
     const accountId = (event as unknown as { account?: string | null }).account ?? null;
 
-    if (event.type === "checkout.session.completed") {
+    // Settlement is driven off BOTH checkout.session.completed AND
+    // checkout.session.async_payment_succeeded (Stripe fulfillment docs:
+    // https://docs.stripe.com/checkout/fulfillment). For instant methods (cards)
+    // `completed` arrives already `paid`; for delayed methods (ACH / bank transfer)
+    // `completed` arrives `unpaid` and async_payment_succeeded fires later when funds
+    // land. Both carry the session with its subscription / payment_intent and a
+    // payment_status the service gates on — so we never settle an `unpaid` session.
+    // async_payment_failed is recognized but NOT settled (it's a no-op "ignored").
+    if (
+      event.type === "checkout.session.completed" ||
+      event.type === "checkout.session.async_payment_succeeded"
+    ) {
       const s = event.data.object as Stripe.Checkout.Session;
       const subscriptionId = typeof s.subscription === "string" ? s.subscription : (s.subscription?.id ?? null);
       const paymentIntentId = typeof s.payment_intent === "string" ? s.payment_intent : (s.payment_intent?.id ?? null);
-      return { type: "checkout.session.completed", eventId: event.id, accountId, checkoutId: s.id, subscriptionId, paymentIntentId };
+      return {
+        type: "checkout.session.completed",
+        eventId: event.id,
+        accountId,
+        checkoutId: s.id,
+        subscriptionId,
+        paymentIntentId,
+        paymentStatus: s.payment_status ?? null,
+      };
     }
-    // invoice.paid (recurring renewals) and payment_intent.succeeded (one-time)
-    // confirm money moved, but the INITIAL settlement is driven off
-    // checkout.session.completed (which carries the deal's checkout id and the
-    // subscription/payment-intent). We recognize these without re-settling — the
-    // deal-already-settled guard makes any overlap an idempotent no-op.
+    // Everything else (async_payment_failed, invoice.*, payment_intent.*) is a
+    // recognized no-op — the deal-already-settled guard makes any overlap idempotent.
     return { type: "ignored" };
   }
 }

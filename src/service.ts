@@ -970,6 +970,21 @@ export class BouncrService {
       return { settled: false };
     }
 
+    // Do NOT settle an `unpaid` session — a delayed payment method (ACH / bank
+    // transfer) completes the Checkout before funds land. We wait for the later
+    // checkout.session.async_payment_succeeded (which arrives `paid`). Settling here
+    // would grant entitlement for money that hasn't moved (and might fail).
+    // (undefined = the fake gateway / legacy events that don't carry it → treat as
+    // paid, preserving the offline/test path.)
+    if (event.paymentStatus === "unpaid") {
+      await this.store.appendEvent("webhook.unpaid", {
+        dealId: deal.id,
+        checkoutId: event.checkoutId,
+        eventId: event.eventId,
+      });
+      return { settled: false };
+    }
+
     await this.store.updateDeal(deal.id, {
       status: "settled",
       stripeSubscriptionId: event.subscriptionId,

@@ -48,13 +48,19 @@ export class FakeStripeGateway implements StripeGateway {
       checkoutId?: string;
       subscriptionId?: string | null;
       paymentIntentId?: string | null;
+      paymentStatus?: string | null;
     };
     try {
       body = JSON.parse(rawBody);
     } catch {
       return { type: "ignored" };
     }
-    if (body.type === "checkout.session.completed" && body.checkoutId) {
+    // Mirror live: both completed and async_payment_succeeded are settlement
+    // triggers; payment_status defaults to "paid" (the offline/card path).
+    if (
+      (body.type === "checkout.session.completed" || body.type === "checkout.session.async_payment_succeeded") &&
+      body.checkoutId
+    ) {
       return {
         type: "checkout.session.completed",
         eventId: body.eventId ?? `evt_test_${randomUUID().slice(0, 8)}`,
@@ -62,6 +68,7 @@ export class FakeStripeGateway implements StripeGateway {
         checkoutId: body.checkoutId,
         subscriptionId: body.subscriptionId ?? `sub_test_${randomUUID().slice(0, 8)}`,
         paymentIntentId: body.paymentIntentId ?? null,
+        paymentStatus: body.paymentStatus ?? "paid",
       };
     }
     return { type: "ignored" };

@@ -423,3 +423,49 @@ describe("rate-based wallet guard (Spec §12) — velocity, not volume", () => {
     expect(turnCalls).toBe(20); // every message got a real negotiation turn, none throttled
   });
 });
+
+describe("settlement gates on payment_status (delayed-payment methods)", () => {
+  it("refuses to settle an `unpaid` completed session; settles when the paid event arrives", async () => {
+    const { store, service } = makeService();
+    const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "u" });
+    const acc = await service.acceptCurrent(sessionId);
+    await pay(service, acc); // creates the Stripe checkout → sets stripeCheckoutId
+    const checkoutId = (await store.getDeal(acc.dealId))!.stripeCheckoutId!;
+
+    // checkout.session.completed but UNPAID (e.g. ACH not yet cleared) → NOT settled,
+    // no entitlement, deal stays pending. The silent-failure guard.
+    const unpaid = await service.handleStripeEvent({
+      type: "checkout.session.completed",
+      eventId: "evt_unpaid",
+      accountId: null,
+      checkoutId,
+      subscriptionId: "sub_x",
+      paymentStatus: "unpaid",
+    });
+    expect(unpaid.settled).toBe(false);
+    expect((await store.getDeal(acc.dealId))?.status).toBe("pending");
+    expect(store.allEvents().some((e) => e.type === "webhook.unpaid")).toBe(true);
+
+    // Later: checkout.session.async_payment_succeeded arrives `paid` → settles.
+    const paid = await service.handleStripeEvent({
+      type: "checkout.session.completed",
+      eventId: "evt_paid",
+      accountId: null,
+      checkoutId,
+      subscriptionId: "sub_x",
+      paymentStatus: "paid",
+    });
+    expect(paid.settled).toBe(true);
+    expect((await store.getDeal(acc.dealId))?.status).toBe("settled");
+  });
+
+  it("an event with no payment_status (fake gateway / legacy) still settles", async () => {
+    const { store, service } = makeService();
+    const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "u2" });
+    const acc = await service.acceptCurrent(sessionId);
+    await pay(service, acc);
+    const checkoutId = (await store.getDeal(acc.dealId))!.stripeCheckoutId!;
+    const r = await service.handleStripeEvent(completed(checkoutId)); // helper omits paymentStatus
+    expect(r.settled).toBe(true);
+  });
+});

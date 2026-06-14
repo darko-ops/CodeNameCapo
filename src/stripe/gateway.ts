@@ -61,6 +61,13 @@ export interface CheckoutResult {
  * Normalized settlement webhook. `eventId` is Stripe's event id (idempotency);
  * `accountId` is the connected account the event fired on (account-scoping — a
  * webhook for merchant A must never settle merchant B's deal).
+ *
+ * The single settlement-trigger type is produced from BOTH Stripe events that mean
+ * "this Checkout's payment is in/past success" — `checkout.session.completed` AND
+ * `checkout.session.async_payment_succeeded` — because delayed payment methods (ACH,
+ * bank transfers) leave a COMPLETED session `unpaid` until funds land, and only then
+ * fire async_payment_succeeded (Stripe fulfillment docs). `paymentStatus` carries the
+ * session's payment_status so the service can refuse to settle an `unpaid` session.
  */
 export type WebhookEvent =
   | {
@@ -70,6 +77,9 @@ export type WebhookEvent =
       checkoutId: string;
       subscriptionId: string | null;
       paymentIntentId?: string | null;
+      /** Session payment_status: "paid" | "unpaid" | "no_payment_required". Settle
+       *  only when NOT "unpaid" (a delayed method hasn't actually paid yet). */
+      paymentStatus?: string | null;
     }
   | { type: "ignored" };
 
