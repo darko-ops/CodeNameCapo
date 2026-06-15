@@ -65,34 +65,55 @@ account, `application_fee_percent`) → Stripe → webhook `checkout.session.com
 
 ---
 
-## TODO — confirm in the credentialed (test-keys) session
+## VERIFIED LIVE — 2026-06-15, test mode
 
-These need real test-mode keys + a connected test account; they're a **confirmation
-checklist**, not an investigation. Set keys per `.env.example`.
+Run against **real test-mode Stripe** via the Stripe CLI (`stripe listen
+--forward-connect-to`), local app on `:8787` booted with the live gateway
+(`stripe: live`), MemoryStore. The merchant under test had no connected account, so
+charges ran on the **platform** test account (`event.account = null`); the connected
+direct-charge + fee path is the one item held for live cutover (see below). No
+code/Stripe divergence found — the settlement-event fix behaves exactly as designed.
 
-- [ ] **Connect webhook scope.** The Stripe webhook endpoint that feeds
-      `/v1/webhooks/stripe` is scoped to **Connected accounts** (`connect: true`), NOT
-      "Your account". *(If wrong, direct-charge events never arrive → deals charge but
-      never settle. This is the #1 silent failure to rule out.)*
-- [ ] **`STRIPE_WEBHOOK_SECRET` = the Connect endpoint's secret** (not an account
-      endpoint's, not the CLI's unless using `stripe listen`).
-- [ ] **4242 subscription end-to-end** on the connected test account: negotiate → pay
-      `4242` → confirm `checkout.session.completed` arrives with `event.account` = the
-      connected acct, `payment_status: "paid"`, `subscription` set → deal `settled`.
-- [ ] **Entitlement delivered.** The signed POST fires and `scripts/example-merchant-webhook.mjs`
-      verifies the signature and "grants" at the negotiated price.
-- [ ] **Idempotency on real events.** `stripe events resend <id>` (or a natural
-      re-delivery) → no double-settle, entitlement is an idempotent no-op.
-- [ ] **Account-scoping.** A `checkout.session.completed` whose `account` ≠ the deal's
-      merchant is rejected (`webhook.account_mismatch`).
-- [ ] **One-time / day-pass path** (`mode: payment`): `payment_intent` set, settles.
-- [ ] **Renegotiation reprice** (`updateSubscription` on the connected account) applies
-      the new price + keeps the application fee.
-- [ ] **Postgres money-guarantees.** Run the suite with `DATABASE_URL` set; confirm the
-      single-use proof (`redeemProof` atomic burn) and settlement idempotency hold on
-      Postgres, not just MemoryStore.
-- [ ] **Delayed-method gate (optional).** If feasible, drive a test ACH/delayed method:
-      `completed` arrives `unpaid` → NOT settled; `async_payment_succeeded` → settles.
+- [x] **Connect webhook scope.** Satisfied locally via `stripe listen
+      --forward-connect-to …` (the CLI equivalent of a `connect: true` endpoint).
+      `checkout.session.completed` reached `/v1/webhooks/stripe` with `[200]`.
+- [x] **`STRIPE_WEBHOOK_SECRET` matches the listener's secret** — every forwarded event
+      verified (`200`); a tampered signature returned **`400`** (rejected pre-processing).
+- [x] **4242 subscription end-to-end.** Real browser checkout (`4242`) → paid
+      `checkout.session.completed` → deal `pending → settled` with a real
+      `stripe_subscription_id` (`sub_…`) and `customer.subscription.created` processed.
+- [x] **Entitlement delivered.** `scripts/example-merchant-webhook.mjs` received the
+      signed POST, **verified `Bouncr-Signature`**, and granted: `✓ GRANT … at $48.00
+      USD/mo`.
+- [x] **`payment_status` gate (the #1 silent failure).** A validly-signed `unpaid`
+      `completed` for a real deal's session → **not** settled (stayed `pending`,
+      `webhook.unpaid`); the same session `paid` → `settled`.
+- [x] **Idempotency.** Re-firing the paid event → `settled: true`, no double-settle.
+- [x] **Account-scoping.** A `paid` event stamped with a foreign `account`
+      (`acct_FOREIGN999`) → `settled: false`, deal stayed `pending`
+      (`webhook.account_mismatch`).
+- [x] **Delayed-method (ACH) path.** `completed`/`unpaid` → stayed `pending`; later
+      `checkout.session.async_payment_succeeded`/`paid` → `settled`.
+- [x] **Postgres money-guarantees.** Green in CI (`postgres` job: `redeemProof` atomic
+      single-use under concurrency + the dual-store contract on real Postgres).
+
+### Held for live cutover (not exercised this pass)
+
+- [ ] **Connected-account direct charge + application fee.** This pass used the platform
+      account; onboard a test connected account and confirm `event.account = acct_…`
+      matches the deal's merchant and the `application_fee_percent` is applied. *(Logic
+      is account-scope-tested above with a synthetic acct; the real direct charge is the
+      remaining live item.)*
+- [ ] **Deployed endpoint scope = `connect: true`.** The local CLI proved the path; the
+      production Stripe **Dashboard** webhook endpoint feeding the deployed
+      `/v1/webhooks/stripe` must be **Connected-accounts**-scoped, and
+      `STRIPE_WEBHOOK_SECRET` set to *that* endpoint's secret.
+- [ ] **One-time / day-pass path** (`mode: payment`, `payment_intent` set). Demo plan is
+      monthly; covered by `src/service.test.ts`, not exercised live here.
+- [ ] **Renegotiation reprice** (`updateSubscription` on the connected account) — covered
+      by tests; live with a real connected account at cutover.
+- [ ] **Rotate the test secret key** (`sk_test_…` was pasted in chat) — Dashboard →
+      Developers → API keys → roll.
 
 ## One small LIVE charge (separate, deliberate step — do last)
 
