@@ -26,6 +26,7 @@ import { signSession, verifySession, signReset, verifyReset } from "./auth.js";
 import type { Mailer } from "./mailer.js";
 import { dispatchMcp } from "./mcp.js";
 import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML, RESET_HTML } from "./widget/assets.js";
+import { FAVICON_ICO_B64, ICON_16_B64, ICON_32_B64, APPLE_TOUCH_B64, ICON_192_B64, ICON_512_B64 } from "./widget/icons.generated.js";
 
 export interface AppDeps {
   service: BouncrService;
@@ -595,6 +596,37 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     return c.body(EMBED_JS);
   });
 
+  // --- brand icons ----------------------------------------------------------
+  // The logo pack (assets/bouncr_logo_pack/) is bundled to base64 at build time
+  // (icons.generated.ts) and served here so favicon/app-icon URLs resolve in both
+  // local dev and Vercel (where everything is rewritten to this function).
+  const icon = (b64: string, type: string) => (c: Context) => {
+    c.header("content-type", type);
+    c.header("cache-control", "public, max-age=31536000, immutable");
+    return c.body(Buffer.from(b64, "base64"));
+  };
+  app.get("/favicon.ico", icon(FAVICON_ICO_B64, "image/x-icon"));
+  app.get("/icon-16.png", icon(ICON_16_B64, "image/png"));
+  app.get("/icon-32.png", icon(ICON_32_B64, "image/png"));
+  app.get("/apple-touch-icon.png", icon(APPLE_TOUCH_B64, "image/png"));
+  app.get("/apple-touch-icon-precomposed.png", icon(APPLE_TOUCH_B64, "image/png"));
+  app.get("/icon-192.png", icon(ICON_192_B64, "image/png"));
+  app.get("/icon-512.png", icon(ICON_512_B64, "image/png"));
+  app.get("/site.webmanifest", (c) => {
+    c.header("content-type", "application/manifest+json");
+    return c.body(JSON.stringify({
+      name: "Bouncr",
+      short_name: "Bouncr",
+      icons: [
+        { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+        { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      ],
+      theme_color: "#0B0B12",
+      background_color: "#0B0B12",
+      display: "standalone",
+    }));
+  });
+
   app.onError((err, c) => {
     if (err instanceof ServiceError) {
       return c.json({ error: err.message, code: err.code, ...(err.meta ?? {}) }, STATUS[err.code]);
@@ -635,12 +667,12 @@ function checkoutHtml(view: import("./service.js").CheckoutView): string {
 <style>:root{--bg:#0B0B12;--panel:#13131c;--line:#23232f;--text:#E5E7EB;--muted:#9CA3AF;--accent:#7C3AED;--mint:#34D399;--err:#F87171}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .wrap{max-width:420px;margin:12vh auto;padding:0 18px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:32px 28px;text-align:center}
-.logo{font-size:20px;font-weight:800;letter-spacing:-.4px;color:#fff;margin-bottom:22px}
+.logo{font-size:20px;font-weight:800;letter-spacing:-.4px;color:#fff;margin-bottom:22px;display:flex;align-items:center;justify-content:center;gap:9px}.logo img{width:30px;height:30px}
 .amt{font-size:40px;font-weight:800;letter-spacing:-1px;margin:10px 0 2px}.per{color:var(--muted);font-size:14px;margin-bottom:4px}
 h1{font-size:19px;margin:0 0 6px}.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin:0 0 22px}
 button{width:100%;background:var(--accent);color:#fff;border:0;border-radius:10px;padding:13px;font:inherit;font-weight:700;cursor:pointer}button:hover{background:#6d28d9}
 .note{margin-top:16px;font-size:12px;color:var(--muted)}.big{font-size:34px;margin-bottom:10px}</style></head>
-<body><div class="wrap"><div class="card"><div class="logo">Bouncr</div>${body}</div></div></body></html>`;
+<body><div class="wrap"><div class="card"><div class="logo"><img src="/icon-192.png" alt=""/>Bouncr</div>${body}</div></div></body></html>`;
 
   if (view.state === "pay") {
     const dollars = (view.amountCents / 100).toFixed(2);
