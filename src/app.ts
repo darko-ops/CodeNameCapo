@@ -518,16 +518,19 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
   // --- settlement -----------------------------------------------------------
 
   app.post("/v1/webhooks/stripe", async (c) => {
+    // Correlation id for this webhook → threaded through settlement + entitlement
+    // durable events; returned as request_id so a response can be traced to them.
+    const correlationId = c.req.header("x-request-id") || crypto.randomUUID();
     const raw = await c.req.text();
     const sig = c.req.header("stripe-signature");
     let event;
     try {
       event = stripe.parseWebhook(raw, sig);
     } catch (err) {
-      return c.json({ error: `signature verification failed: ${msg(err)}` }, 400);
+      return c.json({ error: `signature verification failed: ${msg(err)}`, request_id: correlationId }, 400);
     }
-    const r = await service.handleStripeEvent(event);
-    return c.json({ received: true, settled: r.settled, ...(r.dealId ? { deal_id: r.dealId } : {}) });
+    const r = await service.handleStripeEvent(event, { correlationId });
+    return c.json({ received: true, settled: r.settled, ...(r.dealId ? { deal_id: r.dealId } : {}), request_id: correlationId });
   });
 
   // --- embeddable widget (Spec §10) ----------------------------------------

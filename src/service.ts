@@ -948,12 +948,20 @@ export class BouncrService {
    * and on first settle it durably records the entitlement then best-effort
    * notifies the merchant. The outbound notify NEVER fails settlement.
    */
-  async handleStripeEvent(event: WebhookEvent): Promise<{ settled: boolean; dealId?: string }> {
+  async handleStripeEvent(
+    event: WebhookEvent,
+    opts: { correlationId?: string } = {},
+  ): Promise<{ settled: boolean; dealId?: string }> {
+    // Correlation id threaded through every durable event on this settlement, so a
+    // single webhook can be traced end to end (route → settle → entitlement) — the
+    // request_id in the HTTP response matches these records. (Settlement+webhook
+    // path only; broader structured logging/metrics are a later observability pass.)
+    const correlationId = opts.correlationId ?? randomUUID();
     if (event.type !== "checkout.session.completed") return { settled: false };
 
     const deal = await this.store.getDealByCheckoutId(event.checkoutId);
     if (!deal) {
-      await this.store.appendEvent("webhook.unmatched", { checkoutId: event.checkoutId });
+      await this.store.appendEvent("webhook.unmatched", { checkoutId: event.checkoutId, correlationId });
       return { settled: false };
     }
     if (deal.status === "settled") return { settled: true, dealId: deal.id }; // idempotent
@@ -966,6 +974,7 @@ export class BouncrService {
         dealId: deal.id,
         eventAccount: event.accountId,
         eventId: event.eventId,
+        correlationId,
       });
       return { settled: false };
     }
@@ -981,6 +990,7 @@ export class BouncrService {
         dealId: deal.id,
         checkoutId: event.checkoutId,
         eventId: event.eventId,
+        correlationId,
       });
       return { settled: false };
     }
@@ -998,11 +1008,12 @@ export class BouncrService {
       subscriptionId: event.subscriptionId,
       price: deal.price,
       eventId: event.eventId,
+      correlationId,
     });
 
     // Durably record the entitlement BEFORE any outbound POST, then best-effort
     // notify the merchant to grant access (skip-if-unset; failures don't roll back).
-    await this.notifyEntitlement(deal, merchant ?? null, event.eventId);
+    await this.notifyEntitlement(deal, merchant ?? null, event.eventId, correlationId);
     return { settled: true, dealId: deal.id };
   }
 
@@ -1012,7 +1023,12 @@ export class BouncrService {
    * recorded (so retries are a later bolt-on over recorded events). A missing
    * webhook_url or a failed POST is logged, never thrown — money already moved.
    */
-  private async notifyEntitlement(deal: DealRecord, merchant: Merchant | null, eventId: string): Promise<void> {
+  private async notifyEntitlement(
+    deal: DealRecord,
+    merchant: Merchant | null,
+    eventId: string,
+    correlationId: string,
+  ): Promise<void> {
     const payload: EntitlementPayload = {
       deal_id: deal.id,
       end_user_ref: deal.endUserRef,
@@ -1022,21 +1038,22 @@ export class BouncrService {
       status: "active",
     };
     // Durable record of the entitlement — written BEFORE any outbound attempt.
-    await this.store.appendEvent("entitlement.recorded", { ...payload, eventId });
+    await this.store.appendEvent("entitlement.recorded", { ...payload, eventId, correlationId });
 
     if (!merchant?.webhookUrl || !merchant.webhookSecret) {
-      await this.store.appendEvent("entitlement.skipped", { dealId: deal.id, reason: "no webhook_url" });
+      await this.store.appendEvent("entitlement.skipped", { dealId: deal.id, reason: "no webhook_url", correlationId });
       return;
     }
     try {
       await this.notifier.notify(merchant.webhookUrl, merchant.webhookSecret, payload, this.now());
-      await this.store.appendEvent("entitlement.delivered", { dealId: deal.id, eventId });
+      await this.store.appendEvent("entitlement.delivered", { dealId: deal.id, eventId, correlationId });
     } catch (err) {
       // Stub for the durable-retry bolt-on: the event above is already recorded,
       // so a future replayer can re-POST without any new plumbing.
       await this.store.appendEvent("entitlement.delivery_failed", {
         dealId: deal.id,
         eventId,
+        correlationId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

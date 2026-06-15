@@ -469,3 +469,26 @@ describe("settlement gates on payment_status (delayed-payment methods)", () => {
     expect(r.settled).toBe(true);
   });
 });
+
+describe("request-id correlation on the settlement + webhook path", () => {
+  it("threads a correlation id through every durable settlement event", async () => {
+    const { store, service } = makeService();
+    const { sessionId } = await service.createSession({ planId: PLAN.id, endUserRef: "u" });
+    const acc = await service.acceptCurrent(sessionId);
+    await pay(service, acc);
+    const checkoutId = (await store.getDeal(acc.dealId))!.stripeCheckoutId!;
+    await service.handleStripeEvent(completed(checkoutId), { correlationId: "cid_trace" });
+    const settled = store.allEvents().find((e) => e.type === "deal.settled");
+    const ent = store.allEvents().find((e) => e.type === "entitlement.recorded");
+    expect(settled?.payload.correlationId).toBe("cid_trace"); // settlement event tagged
+    expect(ent?.payload.correlationId).toBe("cid_trace"); // entitlement event tagged → end-to-end trace
+  });
+
+  it("generates a correlation id when none is supplied (e.g. fake-gateway tests)", async () => {
+    const { store, service } = makeService();
+    const r = await service.handleStripeEvent(completed("cs_test_unknown_corr"));
+    expect(r.settled).toBe(false); // unmatched, but still recorded with a generated id
+    const unmatched = store.allEvents().find((e) => e.type === "webhook.unmatched");
+    expect(typeof unmatched?.payload.correlationId).toBe("string");
+  });
+});
