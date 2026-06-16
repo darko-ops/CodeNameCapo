@@ -122,7 +122,11 @@ export function assertLiveBootSecrets(env: NodeJS.ProcessEnv = process.env): voi
   };
 
   const problems = [
-    flag("BOUNCR_DEMO_MERCHANT_PASSWORD", env.BOUNCR_DEMO_MERCHANT_PASSWORD, "bouncrdemo"),
+    // The demo-merchant password only matters when the in-memory demo merchant is
+    // seeded from env (no DATABASE_URL). With Postgres the demo merchant is seeded
+    // via SQL (db/seed.sql) and this var is unused — so don't force it in real,
+    // DB-backed production; real merchants set their own passwords at signup.
+    ...(env.DATABASE_URL ? [] : [flag("BOUNCR_DEMO_MERCHANT_PASSWORD", env.BOUNCR_DEMO_MERCHANT_PASSWORD, "bouncrdemo")]),
     flag("BOUNCR_AUTH_SECRET", env.BOUNCR_AUTH_SECRET), // unset ⇒ ephemeral; sessions die + insecure
     flag("BOUNCR_PROOF_PRIVATE_KEY", env.BOUNCR_PROOF_PRIVATE_KEY), // unset ⇒ ephemeral signing key
     flag("STRIPE_SECRET_KEY", env.STRIPE_SECRET_KEY),

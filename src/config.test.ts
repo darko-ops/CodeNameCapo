@@ -26,6 +26,18 @@ describe("assertLiveBootSecrets — live-mode secret guard", () => {
     expect(() => assertLiveBootSecrets(env)).toThrow(/BOUNCR_DEMO_MERCHANT_PASSWORD/);
   });
 
+  it("live mode with Postgres (DATABASE_URL set) does NOT require the demo password — it's SQL-seeded", () => {
+    const env = { ...liveEnvOk(), DATABASE_URL: "postgres://u:p@h:5432/db" };
+    delete env.BOUNCR_DEMO_MERCHANT_PASSWORD;
+    expect(() => assertLiveBootSecrets(env)).not.toThrow();
+    // even the 'bouncrdemo' default is moot with Postgres (demoM is discarded there):
+    expect(() => assertLiveBootSecrets({ ...env, BOUNCR_DEMO_MERCHANT_PASSWORD: "bouncrdemo" })).not.toThrow();
+    // ...but the real secrets are still enforced regardless of the store:
+    const missing = { ...env };
+    delete missing.BOUNCR_AUTH_SECRET;
+    expect(() => assertLiveBootSecrets(missing)).toThrow(/BOUNCR_AUTH_SECRET/);
+  });
+
   it("live mode refuses missing auth/proof secrets (would fall back to ephemeral)", () => {
     const env = { ...liveEnvOk() };
     delete env.BOUNCR_AUTH_SECRET;
