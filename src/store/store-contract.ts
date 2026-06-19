@@ -159,6 +159,18 @@ export function runStoreContract(ctx: StoreCtx): void {
     expect(cycles.map((c) => c.cycleIndex)).toEqual([1, 2]); // cycle_index order
     expect(cycles[1]!.breach).toBe(true);
     await s.appendEvent("test.event", { a: 1 }); // smoke: durable append doesn't throw
+
+    // Event read path (A/B analytics §11): filter by plan, then by plan+type.
+    await s.appendEvent("widget.impression", { planId: plan.id, userRef: "v1", cohort: "treatment" });
+    await s.appendEvent("widget.impression", { planId: plan.id, userRef: "v2", cohort: "control" });
+    await s.appendEvent("merchant.conversion", { planId: plan.id, userRef: "v2", amount: 9 });
+    await s.appendEvent("widget.impression", { planId: "other_plan", userRef: "vx", cohort: "treatment" });
+    const all = await s.listEventsByPlan(plan.id);
+    expect(all.map((e) => e.type).sort()).toEqual(["merchant.conversion", "widget.impression", "widget.impression"]);
+    expect(all.every((e) => e.payload.planId === plan.id)).toBe(true); // never leaks other plans
+    const imps = await s.listEventsByPlan(plan.id, "widget.impression");
+    expect(imps).toHaveLength(2);
+    expect(imps.map((e) => e.payload.cohort).sort()).toEqual(["control", "treatment"]);
   });
 
   it("cooldown: upsert sets then overwrites; getCooldown reads back; unknown → null", async () => {

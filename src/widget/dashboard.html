@@ -65,6 +65,15 @@
   .wtp-tip .u { font-weight:700; color:var(--text); }
   .wtp-tip .p { font-weight:700; }
   .wtp-tip .d { color:var(--muted); }
+  /* A/B lift headline — the single sentence that is the sales deck (§11). */
+  .lift-banner { border-radius:14px; padding:16px 18px; margin:0 0 18px; border:1px solid var(--line); background:#14141f; line-height:1.5; }
+  .lift-banner .big { font-size:21px; font-weight:800; margin-right:8px; }
+  .lift-banner .sub { display:block; color:var(--muted); font-size:12.5px; margin-top:6px; }
+  .lift-banner.good { border-color:rgba(52,211,153,.5); background:linear-gradient(180deg,rgba(52,211,153,.12),#14141f); }
+  .lift-banner.good .big { color:#34D399; }
+  .lift-banner.bad { border-color:rgba(248,113,113,.5); background:linear-gradient(180deg,rgba(248,113,113,.10),#14141f); }
+  .lift-banner.bad .big { color:#F87171; }
+  .lift-banner.pending .big { color:var(--text); }
 
   /* tactics */
   .tactics div { display:flex; align-items:center; gap:10px; margin:8px 0; font-size:13px; }
@@ -178,6 +187,7 @@
   <main class="content">
     <!-- OVERVIEW -->
     <section id="view-overview">
+      <div id="lift-headline" class="lift-banner" style="display:none"></div>
       <div class="seclabel">Outcomes</div>
       <div class="kpis hero" id="closing"></div>
       <div class="kpis sub" id="funnel"></div>
@@ -585,7 +595,7 @@
       const a = await (await api("/v1/analytics/wtp?plan_id=" + encodeURIComponent($("plan").value))).json();
       if (a.error) throw new Error(a.error);
       LAST_A = a;
-      renderClosing(a); renderFunnel(a); renderTactics(a); renderHist(a);
+      renderLift(a); renderClosing(a); renderFunnel(a); renderTactics(a); renderHist(a);
       await renderSessions(); await renderConnect(); await renderLint();
       $("status").textContent = "";
     } catch (e) { $("status").innerHTML = '<span class="err">' + e.message + "</span>"; }
@@ -593,6 +603,34 @@
 
   function walks(f) { return Object.values(f.walkByRound).reduce((x, y) => x + y, 0); }
   function pct(n, d) { return d ? Math.round((100 * n) / d) + "%" : "—"; }
+
+  // The proof-of-lift headline (§11). One sentence: did negotiated pricing beat
+  // the flat page on revenue per visitor? Hidden until the experiment is running;
+  // shows an honest "needs callback" state rather than a number we can't trust.
+  function renderLift(a) {
+    const el = $("lift-headline"), e = a.experiment;
+    if (!e) { el.style.display = "none"; return; }
+    el.style.display = "";
+    const t = e.treatment, c = e.control;
+    if (e.liftPct != null) {
+      const up = e.liftPct >= 0;
+      el.className = "lift-banner " + (up ? "good" : "bad");
+      el.innerHTML =
+        '<span class="big">' + (up ? "+" : "") + e.liftPct + '%</span>revenue per visitor vs. your flat page'
+        + '<span class="sub">Negotiated $' + t.revPerVisitor + '/visitor (n=' + t.visitors + ') · '
+        + 'Flat $' + c.revPerVisitor + '/visitor (n=' + c.visitors + ')</span>';
+    } else {
+      el.className = "lift-banner pending";
+      const tRpv = t.revPerVisitor != null ? "$" + t.revPerVisitor : "—";
+      el.innerHTML =
+        '<span class="big">A/B test running</span>'
+        + (c.visitors
+            ? 'flat-arm lift needs your conversion callback wired (POST /v1/conversions)'
+              + '<span class="sub">Negotiated so far: ' + tRpv + '/visitor (n=' + t.visitors + ') · '
+              + 'Flat visitors n=' + c.visitors + ', revenue unreported</span>'
+            : 'gathering visitors…<span class="sub">Negotiated so far: ' + tRpv + '/visitor (n=' + t.visitors + ')</span>');
+    }
+  }
 
   function renderClosing(a) {
     const c = a.closing, m = a.monetization || { takeRatePercent: 0, bouncrFee: 0, merchantNet: c.revenue };

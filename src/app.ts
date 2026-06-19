@@ -480,6 +480,43 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     return c.json({ ok: true });
   });
 
+  // --- A/B lift experiment (Spec §11) --------------------------------------
+  // Public + keyless: the embed loader beacons one impression per visitor (both
+  // arms) before anything mounts. This is the visitor denominator behind
+  // revenue-per-visitor. IP-rate-limited and best-effort — a flood is absorbed
+  // silently (analytics, never money; the floor is unaffected regardless).
+  app.post("/v1/impressions", async (c) => {
+    if (!limiter.hitAll(clientIp(c), [{ windowMs: 3_000, max: 20 }, { windowMs: 60_000, max: 120 }])) {
+      return c.json({ ok: true }); // absorb floods; never reveal a limit
+    }
+    const body = await safeJson(c);
+    const planId = str(body.plan);
+    const userRef = str(body.user);
+    if (!planId || !userRef) return c.json({ error: "plan and user are required" }, 400);
+    try {
+      await service.recordImpression({ planId, endUserRef: userRef, cohort: str(body.cohort) ?? "treatment" });
+    } catch {
+      // Unknown/inactive plan: swallow — an impression beacon must never error the page.
+    }
+    return c.json({ ok: true });
+  });
+
+  // Control-arm conversion callback (Spec §11). Merchant-key'd (server-to-server,
+  // from the merchant's own Stripe webhook), unlike the keyless browser beacon.
+  // Reports a flat-page sale Bouncr can't otherwise see, completing the
+  // control-arm numerator for the lift comparison.
+  app.post("/v1/conversions", merchantKey, async (c) => {
+    const body = await safeJson(c);
+    const planId = str(body.plan_id);
+    const userRef = str(body.user_ref);
+    const amount = num(body.amount);
+    if (!planId || !userRef || amount === null) {
+      return c.json({ error: "plan_id, user_ref, and amount are required" }, 400);
+    }
+    await service.recordConversion({ planId, endUserRef: userRef, amount });
+    return c.json({ ok: true });
+  });
+
   // --- MCP server (Streamable HTTP) ----------------------------------------
   // Any AI agent can negotiate via tools — same engine + validator as the widget,
   // so the floor holds. Keyless = public buyer mode (plan id only). A valid

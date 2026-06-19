@@ -226,6 +226,13 @@ export class MemoryStore implements Store {
     this.events.push({ id: randomUUID(), type, payload: clone(payload), createdAt: Date.now() });
   }
 
+  async listEventsByPlan(planId: string, type?: string): Promise<EventRecord[]> {
+    return this.events
+      .filter((e) => e.payload.planId === planId && (type === undefined || e.type === type))
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map(clone);
+  }
+
   async setCooldown(planId: string, endUserRef: string, until: number): Promise<void> {
     this.cooldowns.set(`${planId}:${endUserRef}`, until);
   }

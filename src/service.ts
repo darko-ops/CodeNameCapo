@@ -291,6 +291,46 @@ export class BouncrService {
     await this.store.appendEvent("waitlist.signup", { email: e, source: source ?? null, at: this.now() });
   }
 
+  /**
+   * Record a widget impression for the A/B lift experiment (Spec §11). Fired by
+   * the embed loader for BOTH arms before anything mounts — this is the visitor
+   * denominator that makes revenue-PER-VISITOR (not per-session) measurable.
+   * Resolves the public plan key to the internal id so the analytics read
+   * (listEventsByPlan) matches; cohort is normalized to treatment|control.
+   * Dedup is done at read time (distinct user per cohort), so re-firing is safe.
+   */
+  async recordImpression(input: { planId: string; endUserRef: string; cohort: string }): Promise<void> {
+    const plan = await this.requirePlan(input.planId);
+    const cohort = input.cohort === "control" ? "control" : "treatment";
+    await this.store.appendEvent("widget.impression", {
+      planId: plan.id,
+      userRef: input.endUserRef,
+      cohort,
+      at: this.now(),
+    });
+  }
+
+  /**
+   * Record a CONTROL-arm conversion reported by the merchant (Spec §11). Bouncr
+   * sees treatment revenue natively (settled deals) but is blind to sales that
+   * close on the merchant's own flat page — so the merchant calls this from its
+   * existing Stripe webhook (one line) to report them. Without it, the dashboard
+   * degrades honestly: treatment self-measures, the flat arm shows "needs
+   * conversion callback" rather than a false comparison.
+   */
+  async recordConversion(input: { planId: string; endUserRef: string; amount: number }): Promise<void> {
+    const plan = await this.requirePlan(input.planId);
+    if (!Number.isFinite(input.amount) || input.amount < 0) {
+      throw new ServiceError("bad_request", "amount must be a non-negative number");
+    }
+    await this.store.appendEvent("merchant.conversion", {
+      planId: plan.id,
+      userRef: input.endUserRef,
+      amount: input.amount,
+      at: this.now(),
+    });
+  }
+
   // --- Merchant signup / onboarding (Spec §9) ------------------------------
 
   /**
