@@ -149,3 +149,7 @@ create table if not exists bouncr.events (
   created_at bigint not null
 );
 create index if not exists events_type_idx on bouncr.events(type, created_at);
+-- A/B lift analytics (§11) read the event log by plan: planId lives in the JSONB
+-- payload, so index the expression. Composite with type to serve the common
+-- (plan, type) filter (e.g. widget.impression / merchant.conversion per plan).
+create index if not exists events_plan_idx on bouncr.events ((payload->>'planId'), type);

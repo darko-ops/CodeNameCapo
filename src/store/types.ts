@@ -270,6 +270,14 @@ export interface Store {
   listUsageCycles(dealId: string): Promise<UsageCycle[]>;
 
   appendEvent(type: string, payload: Record<string, unknown>): Promise<void>;
+  /**
+   * Read the append-only event log for one plan, oldest first, optionally
+   * filtered by type. The ONLY read path over events — events carry `planId` in
+   * their payload, and this matches on it. Powers the A/B lift analytics (§11),
+   * which reads `widget.impression` and `merchant.conversion` events. Dedup and
+   * aggregation live in computeAnalytics so they're unit-tested on MemoryStore.
+   */
+  listEventsByPlan(planId: string, type?: string): Promise<EventRecord[]>;
 
   /** Per-(plan, end_user_ref) walkaway cooldown (Spec §12). Stores the expiry ms. */
   setCooldown(planId: string, endUserRef: string, until: number): Promise<void>;

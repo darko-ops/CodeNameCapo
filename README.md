@@ -223,7 +223,7 @@ src/
 ```
 
 ### Stripe Connect (§7)
-Deals settle into the **merchant's** account once onboarded (Connect Standard, direct charges via the `Stripe-Account` header — no platform fee in v1).
+Deals settle into the **merchant's** account once onboarded (Connect Standard, direct charges via the `Stripe-Account` header). Bouncr's take-rate is wired end-to-end: `BOUNCR_APPLICATION_FEE_PERCENT` (platform default) with a per-plan `applicationFeePercent` override, applied as the Connect `application_fee_percent` (subscriptions) / `application_fee_amount` (one-time). It defaults to `0` — set it to start earning.
 
 ```
 POST /v1/merchants/:id/connect/onboard   {return_url?} → {url, account_id}
@@ -281,13 +281,23 @@ Breach = usage > band ceiling. A renegotiation opens only after **consecutive** 
 ### Analytics v2 (§6.4)
 `GET /v1/analytics/wtp` now includes `reneg: {opened, up, down, accepted, grandfathered, avgUpliftPct}` — repricing tolerance over time, a dataset no billing platform has.
 
-> Not built (GTM/infra, out of scope for this repo): the SMS/iMessage channel (needs Twilio/Sendblue), config A/B experiments, and the public launch. The "negotiated via Bouncr" viral mark already ships in the Phase 2 deal screen.
+### A/B lift experiment (§11)
+Proof-of-lift, not just close-rate. Set `data-split` on the embed (e.g. `0.9` → 90% see the negotiated widget; 10% are held out to the merchant's flat page via `data-fallback`). The loader buckets each visitor by a **stable hash of their user ref** and beacons one `widget.impression` for **both** arms — the visitor denominator that makes **revenue-per-visitor** (not per-session) measurable. Bouncr sees treatment revenue natively; the merchant reports control-arm sales from its own Stripe webhook with one call:
+
+```
+POST /v1/impressions   {plan, user, cohort}         # keyless browser beacon (both arms)
+POST /v1/conversions   {plan_id, user_ref, amount}  # merchant key, from your Stripe webhook
+```
+
+`GET /v1/analytics/wtp` then carries an `experiment` block — `{split, treatment, control, liftPct}` — and the dashboard renders the headline: **"+X% revenue per visitor vs. your flat page."** Until the conversion callback is wired, the control arm degrades honestly (lift shown as *pending*) rather than comparing the wrong denominator.
+
+> Not built (GTM/infra, out of scope for this repo): the SMS/iMessage channel (needs Twilio/Sendblue) and the public launch. The "negotiated via Bouncr" viral mark already ships in the Phase 2 deal screen.
 
 ## Scripts
 
 ```
 npm install
-npm test         # vitest: engine + validator + service/HTTP/widget/SSE + lint/analytics/cooldown/connect + reneg/usage (no API key)
+npm test         # vitest: engine + validator + service/HTTP/widget/SSE + lint/analytics/cooldown/connect + reneg/usage + A/B lift (no API key)
 npm run typecheck
 npm run haggle   # live CLI negotiation (needs ANTHROPIC_API_KEY)
 npm run serve    # HTTP API + widget + dashboard (sandbox by default)

@@ -21,6 +21,7 @@ import type {
   SessionRecord,
   TurnRecord,
   DealRecord,
+  EventRecord,
   UsageCycle,
   NewSession,
   NewTurn,
@@ -292,6 +293,17 @@ export class PostgresStore implements Store {
       values (${type}, ${this.sql.json(payload as any)}, ${Date.now()})`;
   }
 
+  async listEventsByPlan(planId: string, type?: string): Promise<EventRecord[]> {
+    // planId lives in the JSONB payload (the events log is schemaless); the
+    // events_plan_idx expression index on (payload->>'planId', type) serves this.
+    const rows = await this.sql`
+      select * from bouncr.events
+      where payload->>'planId' = ${planId}
+      ${type === undefined ? this.sql`` : this.sql`and type = ${type}`}
+      order by created_at asc`;
+    return rows.map((r) => this.toEvent(r));
+  }
+
   async setCooldown(planId: string, endUserRef: string, until: number): Promise<void> {
     await this.sql`
       insert into bouncr.cooldowns (plan_id, end_user_ref, until_ms)
@@ -376,6 +388,15 @@ export class PostgresStore implements Store {
       renegSessionId: r.reneg_session_id ?? null,
       createdAt: Number(r.created_at),
       settledAt: r.settled_at === null ? null : Number(r.settled_at),
+    };
+  }
+
+  private toEvent(r: any): EventRecord {
+    return {
+      id: r.id,
+      type: r.type,
+      payload: (r.payload ?? {}) as Record<string, unknown>,
+      createdAt: Number(r.created_at),
     };
   }
 
