@@ -133,6 +133,7 @@ curl -sX POST localhost:8787/v1/sessions/<id>/accept
 | `ANTHROPIC_API_KEY` | negotiator | real Haiku/Sonnet pipeline |
 | `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` | Stripe | real Checkout + signature-verified webhooks |
 | `DATABASE_URL` | store | Postgres (`psql "$DATABASE_URL" -f db/schema.sql` first) |
+| `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_FROM_NUMBER` | sms | real texts via Twilio (+ signed inbound webhooks) |
 | `BOUNCR_API_KEY` | auth | `x-api-key` required on `/v1/*` (webhook exempt) |
 | `BOUNCR_BASE_URL` | redirects | Stripe success/cancel URLs |
 
@@ -291,7 +292,28 @@ POST /v1/conversions   {plan_id, user_ref, amount}  # merchant key, from your St
 
 `GET /v1/analytics/wtp` then carries an `experiment` block — `{split, treatment, control, liftPct}` — and the dashboard renders the headline: **"+X% revenue per visitor vs. your flat page."** Until the conversion callback is wired, the control arm degrades honestly (lift shown as *pending*) rather than comparing the wrong denominator.
 
-> Not built (GTM/infra, out of scope for this repo): the SMS/iMessage channel (needs Twilio/Sendblue) and the public launch. The "negotiated via Bouncr" viral mark already ships in the Phase 2 deal screen.
+> Not built (GTM/infra, out of scope for this repo): the public launch. The "negotiated via Bouncr" viral mark already ships in the Phase 2 deal screen.
+
+## SMS channel — the phone-number install (Spec §10)
+
+A second install type for websites: instead of the chat iframe, a **compact phone-number input**. The visitor drops their number, the agent texts them, and the whole haggle happens in their messages — the SAME Extract→Engine→Validate turn as the widget, so the floor holds no matter which pipe the words travel through.
+
+```html
+<script src="https://bouncr.tech/embed.js"
+        data-plan="pro_monthly" data-channel="sms" data-mount="#bouncr"></script>
+```
+
+```
+POST /v1/sms/start      {plan_id, phone}   keyless (runs in the visitor's browser) → texts the opener
+POST /v1/webhooks/sms   Twilio inbound (form-encoded; X-Twilio-Signature verified when live) → TwiML reply
+GET  /widget/sms        the compact input page (iframe target; src/widget/sms.html)
+```
+
+- **The phone number (E.164) IS the `end_user_ref`** — an inbound text carries nothing else to route by — so cooldowns, the message cap, the wallet guard, and analytics all work unchanged.
+- **One live SMS thread per number**: re-submitting the form nudges the open session with the standing ask (deterministic, no LLM call) instead of forking the negotiation or re-texting the opener.
+- **Deal → the reply texts the hosted-checkout link.** `STOP` (and the other carrier opt-out keywords) ends the thread silently; unknown senders get an empty `<Response/>` — the webhook can never be used to make Bouncr text strangers.
+- **SMS-pumping guard**: `/v1/sms/start` is rate-limited per IP *and* per destination number (outbound texts cost real money), and the first text carries the opt-out notice.
+- **Sandbox from day one**: with no `TWILIO_*` vars, texts land in the server log (`[sms:sandbox] …`) and webhook signatures aren't checked — the whole channel runs offline, and `npm test` covers it end-to-end. Live: set `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_FROM_NUMBER` and point the Twilio number's inbound webhook at `<BOUNCR_BASE_URL>/v1/webhooks/sms`.
 
 ## Scripts
 

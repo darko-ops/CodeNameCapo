@@ -25,7 +25,8 @@ import { RateLimiter, type RateRule } from "./ratelimit.js";
 import { signSession, verifySession, signReset, verifyReset } from "./auth.js";
 import type { Mailer } from "./mailer.js";
 import { dispatchMcp } from "./mcp.js";
-import { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML, RESET_HTML } from "./widget/assets.js";
+import { normalizePhone, verifyTwilioSignature, twiml } from "./sms.js";
+import { WIDGET_HTML, EMBED_JS, SMS_HTML, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML, RESET_HTML } from "./widget/assets.js";
 import { FAVICON_ICO_B64, ICON_16_B64, ICON_32_B64, APPLE_TOUCH_B64, ICON_192_B64, ICON_512_B64 } from "./widget/icons.generated.js";
 
 export interface AppDeps {
@@ -39,6 +40,9 @@ export interface AppDeps {
   stripeLive?: boolean;
   /** Sends transactional email (password reset). Console logger in the sandbox. */
   mailer: Mailer;
+  /** Twilio auth token — when set, inbound SMS webhooks must carry a valid
+   *  X-Twilio-Signature. Null/absent (sandbox) skips verification. */
+  smsAuthToken?: string | null;
 }
 
 /** Dashboard session lifetime. */
@@ -61,6 +65,14 @@ const MSG_RULES: readonly RateRule[] = [
   { windowMs: 60_000, max: 30 }, // sustained per-minute ceiling
 ];
 const SESSION_RULE: RateRule = { windowMs: 600_000, max: 15 }; // new sessions / IP / 10 min (public demo only)
+// SMS-pumping guard: outbound texts cost real money, so the keyless start
+// endpoint is capped per IP AND per destination number (a flood aimed at one
+// victim's phone is throttled even when it rotates IPs).
+const SMS_START_RULES: readonly RateRule[] = [
+  { windowMs: 60_000, max: 3 },
+  { windowMs: 3_600_000, max: 10 },
+];
+const SMS_PHONE_RULES: readonly RateRule[] = [{ windowMs: 3_600_000, max: 4 }];
 
 // In-character throttle lines — shown instead of a 429 so it reads as the
 // bouncer talking, not an error. No LLM call is made, so a throttled turn is free.
@@ -517,6 +529,55 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
     return c.json({ ok: true });
   });
 
+  // --- SMS channel (Spec §10) -----------------------------------------------
+  // The phone-input embed posts here — keyless (it runs in the visitor's
+  // browser, like the impression beacon) but double rate-limited: per IP and per
+  // destination number, since every start costs an outbound text.
+  app.post("/v1/sms/start", async (c) => {
+    const body = await safeJson(c);
+    const planId = str(body.plan_id) ?? str(body.plan);
+    const phone = str(body.phone) ? normalizePhone(str(body.phone)!) : null;
+    if (!planId || !phone) {
+      return c.json({ error: "plan_id and a valid phone number are required", code: "bad_request" }, 400);
+    }
+    if (!limiter.hitAll(clientIp(c), SMS_START_RULES) || !limiter.hitAll(`sms:${phone}`, SMS_PHONE_RULES)) {
+      return c.json({ error: "too many requests, try again shortly", code: "conflict" }, 429);
+    }
+    await service.startSmsSession({ planId, phone });
+    return c.json({ ok: true }, 201);
+  });
+
+  // Inbound texts (Twilio webhook, form-encoded From/Body). With a Twilio auth
+  // token configured the X-Twilio-Signature is mandatory — verified over the
+  // exact public URL + sorted params, per Twilio's scheme. The response is
+  // TwiML; silence (empty <Response/>) for unknown senders, floods, or errors,
+  // so this endpoint can never be used to make Bouncr text on command.
+  app.post("/v1/webhooks/sms", async (c) => {
+    const xml = (doc: string) => {
+      c.header("content-type", "text/xml; charset=utf-8");
+      return c.body(doc);
+    };
+    const raw = await c.req.text(); // raw body (parseBody hangs under the serverless adapter)
+    const params: Record<string, string> = {};
+    for (const [k, v] of new URLSearchParams(raw)) params[k] = v;
+    if (deps.smsAuthToken) {
+      const url = `${baseFromReq(c)}/v1/webhooks/sms`;
+      if (!verifyTwilioSignature(deps.smsAuthToken, url, params, c.req.header("x-twilio-signature"))) {
+        return c.text("invalid signature", 403);
+      }
+    }
+    // Key the flood guard on the SENDER, not the caller IP — legit inbound all
+    // arrives from Twilio's IPs, so an IP limit would throttle users together.
+    if (!limiter.hitAll(`sms:in:${params.From ?? "unknown"}`, MSG_RULES)) return xml(twiml());
+    try {
+      const r = await service.handleInboundSms(params.From ?? "", params.Body ?? "");
+      return xml(twiml(r.reply));
+    } catch (err) {
+      console.error("[sms] inbound turn failed:", msg(err));
+      return xml(twiml()); // never bounce an error back through the carrier
+    }
+  });
+
   // --- MCP server (Streamable HTTP) ----------------------------------------
   // Any AI agent can negotiate via tools — same engine + validator as the widget,
   // so the floor holds. Keyless = public buyer mode (plan id only). A valid
@@ -589,6 +650,7 @@ export function buildApp(deps: AppDeps): Hono<{ Variables: { merchantId: string 
   app.get("/landing", (c) => c.html(LANDING_HTML)); // always reachable for preview
   app.get("/playground", (c) => c.html(DEMO_HTML)); // explicit demo path
   app.get("/widget", (c) => c.html(WIDGET_HTML));
+  app.get("/widget/sms", (c) => c.html(SMS_HTML)); // compact phone-input embed (SMS channel)
   app.get("/dashboard", (c) => c.html(DASHBOARD_HTML)); // merchant dashboard (Spec §11)
   app.get("/signup", (c) => c.html(ONBOARD_HTML)); // merchant onboarding wizard (Spec §9)
   app.get("/start", (c) => c.html(ONBOARD_HTML));

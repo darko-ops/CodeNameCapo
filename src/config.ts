@@ -19,6 +19,7 @@ import type { Negotiator } from "./llm/negotiator.js";
 import { makeAnthropicNegotiator, makeTemplateNegotiator } from "./llm/negotiator.js";
 import type { Mailer } from "./mailer.js";
 import { ConsoleMailer, ResendMailer } from "./mailer.js";
+import { ConsoleSms, TwilioSms, type SmsSender } from "./sms.js";
 import { ProofSigner } from "./proof.js";
 import { FetchNotifier } from "./notify.js";
 import { BouncrService } from "./service.js";
@@ -92,11 +93,14 @@ export interface BuiltService {
   stripe: StripeGateway;
   /** Outbound email (Resend live, console in sandbox). */
   mailer: Mailer;
-  sandbox: { stripe: boolean; negotiator: boolean; email: boolean };
+  sandbox: { stripe: boolean; negotiator: boolean; email: boolean; sms: boolean };
   store: "postgres" | "memory";
   apiKey: string | null;
   /** HMAC secret for signing dashboard session tokens. */
   authSecret: string;
+  /** Twilio auth token when live SMS is configured — the app verifies inbound
+   *  webhook signatures with it. Null in sandbox (verification skipped). */
+  smsAuthToken: string | null;
 }
 
 /**
@@ -211,6 +215,21 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
     mailer = new ConsoleMailer();
   }
 
+  // SMS: Twilio when all three TWILIO_* vars are set, else a console logger
+  // (sandbox — the whole SMS channel still runs offline, texts land in the log).
+  let sms: SmsSender;
+  let smsSandbox = true;
+  const twilio = [env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN, env.TWILIO_FROM_NUMBER];
+  if (twilio.every(Boolean)) {
+    sms = new TwilioSms(env.TWILIO_ACCOUNT_SID!, env.TWILIO_AUTH_TOKEN!, env.TWILIO_FROM_NUMBER!);
+    smsSandbox = false;
+  } else {
+    if (twilio.some(Boolean)) {
+      console.warn("[sms] partial TWILIO_* config — need ACCOUNT_SID + AUTH_TOKEN + FROM_NUMBER; falling back to sandbox SMS");
+    }
+    sms = new ConsoleSms();
+  }
+
   // Platform take-rate (Connect application fee), e.g. BOUNCR_APPLICATION_FEE_PERCENT=20.
   const applicationFeePercent = Number(env.BOUNCR_APPLICATION_FEE_PERCENT ?? "") || 0;
 
@@ -234,15 +253,17 @@ export function buildServiceFromEnv(env: NodeJS.ProcessEnv = process.env): Built
     applicationFeePercent,
     proofSigner,
     notifier: new FetchNotifier(), // real signed POST to merchants' webhook URLs
+    sms,
   });
 
   return {
     service,
     stripe,
     mailer,
-    sandbox: { stripe: stripeSandbox, negotiator: negotiatorSandbox, email: emailSandbox },
+    sandbox: { stripe: stripeSandbox, negotiator: negotiatorSandbox, email: emailSandbox, sms: smsSandbox },
     store: usePostgres ? "postgres" : "memory",
     apiKey: env.BOUNCR_API_KEY ?? null,
     authSecret,
+    smsAuthToken: smsSandbox ? null : env.TWILIO_AUTH_TOKEN!,
   };
 }

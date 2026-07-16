@@ -33,6 +33,7 @@ import type { ChatTurn } from "./llm/types.js";
 import { computeAnalytics } from "./analytics.js";
 import { ProofSigner, mintProof, type ProofVerifier, type ProofClaims, type ProofError, type ProofInterval } from "./proof.js";
 import { NoopNotifier, type EntitlementNotifier, type EntitlementPayload } from "./notify.js";
+import { ConsoleSms, normalizePhone, type SmsSender } from "./sms.js";
 import { lintConfig, type LintResult } from "./lint.js";
 import { buildRenegConfig, type RenegDirection, type RenegPlan } from "./reneg.js";
 import { messageRateExceeded } from "./ratelimit.js";
@@ -71,6 +72,8 @@ export interface ServiceDeps {
   proofSigner?: ProofSigner;
   /** Delivers entitlement webhooks to merchants on settle. Defaults to no-op. */
   notifier?: EntitlementNotifier;
+  /** Sends outbound texts (SMS channel). Console logger in the sandbox. */
+  sms?: SmsSender;
 }
 
 export interface CreateSessionInput {
@@ -131,6 +134,7 @@ export class BouncrService {
   private readonly proofSigner: ProofSigner;
   private readonly proofVerifier: ProofVerifier;
   private readonly notifier: EntitlementNotifier;
+  private readonly sms: SmsSender;
 
   constructor(deps: ServiceDeps) {
     this.store = deps.store;
@@ -143,6 +147,7 @@ export class BouncrService {
     this.proofSigner = deps.proofSigner ?? ProofSigner.ephemeral();
     this.proofVerifier = this.proofSigner.verifier();
     this.notifier = deps.notifier ?? new NoopNotifier();
+    this.sms = deps.sms ?? new ConsoleSms();
   }
 
   // --- Settlement proofs (hosted-checkout path) ----------------------------
@@ -275,6 +280,94 @@ export class BouncrService {
     });
 
     return { sessionId: session.id, sessionToken: session.sessionToken, opener, expiresAt };
+  }
+
+  // --- SMS channel (Spec §10 — another dumb terminal) -----------------------
+
+  /**
+   * Start (or resume) a negotiation over SMS from the phone-input embed. The
+   * phone number IS the end_user_ref — an inbound text carries nothing else to
+   * route by — so cooldowns and the A/B bucketing hash work unchanged. One live
+   * SMS thread per number: an open, unexpired session gets a cheap deterministic
+   * nudge (current ask — validator-safe by construction, no LLM call) instead of
+   * a second opener, so mashing the button can't spam texts or fork the haggle.
+   */
+  async startSmsSession(input: {
+    planId: string;
+    phone: string;
+    context?: Record<string, unknown>;
+  }): Promise<{ sessionId: string; reused: boolean }> {
+    const phone = normalizePhone(input.phone);
+    if (!phone) throw new ServiceError("bad_request", "a valid phone number is required");
+    await this.requirePlan(input.planId); // 404 an unknown/inactive plan before any send
+    const now = this.now();
+
+    const existing = await this.store.findOpenSessionByUser(phone, "sms");
+    if (existing && existing.expiresAt > now) {
+      const nudge = `still on — my number's $${existing.currentAsk}. text me back.`;
+      await this.store.addTurn({ sessionId: existing.id, role: "bouncer", rawText: nudge, extracted: null, action: null });
+      await this.sendSms(phone, nudge);
+      await this.store.appendEvent("sms.start", { sessionId: existing.id, planId: existing.planId, reused: true });
+      return { sessionId: existing.id, reused: true };
+    }
+    // A stale "open" session past its timer can't take turns anymore (the engine
+    // walks past expiry) — close it out so the phone maps to one live thread.
+    if (existing) await this.store.updateSession(existing.id, { status: "expired" });
+
+    const created = await this.createSession({
+      planId: input.planId,
+      endUserRef: phone,
+      channel: "sms",
+      ...(input.context ? { context: input.context } : {}),
+    });
+    // First outbound text carries the opt-out notice (CTIA); replies stay clean.
+    await this.sendSms(phone, `${created.opener}\n\n(negotiating via Bouncr — text STOP to end)`);
+    await this.store.appendEvent("sms.start", { sessionId: created.sessionId, planId: input.planId, reused: false });
+    return { sessionId: created.sessionId, reused: false };
+  }
+
+  /**
+   * Handle one inbound text (Twilio webhook). Routes the sender's number to its
+   * open SMS session and runs the SAME postMessage turn as the web widget —
+   * extractor, engine, validator, wallet guard, message cap, all of it. Returns
+   * the reply to send back as TwiML, or null for silence (unknown numbers get
+   * nothing: an unrecognized sender must never be able to make Bouncr talk).
+   */
+  async handleInboundSms(fromRaw: string, text: string): Promise<{ reply: string | null }> {
+    const phone = normalizePhone(fromRaw);
+    const body = text.trim();
+    if (!phone || !body) return { reply: null };
+
+    const session = await this.store.findOpenSessionByUser(phone, "sms");
+    if (!session) return { reply: null };
+
+    // Carrier opt-out keywords end the thread immediately, no reply of our own —
+    // Twilio/the carrier sends the mandated STOP confirmation.
+    if (/^(stop|stopall|unsubscribe|cancel|end|quit)$/i.test(body)) {
+      await this.store.updateSession(session.id, { status: "walked" });
+      await this.store.appendEvent("sms.optout", { sessionId: session.id, planId: session.planId });
+      return { reply: null };
+    }
+
+    try {
+      const r = await this.postMessage(session.id, body);
+      const reply = r.checkoutUrl ? `${r.reply}\n\nlock it in: ${r.checkoutUrl}` : r.reply;
+      return { reply };
+    } catch (err) {
+      // A raced-closed/expired session isn't the texter's fault — go quiet rather
+      // than bounce an error back through the carrier.
+      if (err instanceof ServiceError) return { reply: null };
+      throw err;
+    }
+  }
+
+  /** Outbound text with the failure translated for the embed ("bad number" ≠ 500). */
+  private async sendSms(phone: string, body: string): Promise<void> {
+    try {
+      await this.sms.send(phone, body);
+    } catch (err) {
+      throw new ServiceError("bad_request", `couldn't text that number (${err instanceof Error ? err.message : String(err)})`);
+    }
   }
 
   /**

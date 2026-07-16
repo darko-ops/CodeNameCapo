@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 const widgetDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "widget");
 const files = {
   WIDGET_HTML: "widget.html",
+  SMS_HTML: "sms.html",
   EMBED_JS: "embed.js",
   DEMO_HTML: "demo.html",
   DASHBOARD_HTML: "dashboard.html",

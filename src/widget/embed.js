@@ -8,6 +8,11 @@
  *           data-fallback="https://yourapp.com/pricing"
  *           data-split="0.9"></script>
  *
+ * data-channel="sms" swaps the chat iframe for the compact SMS install: a small
+ * phone-number input, and the agent texts the visitor instead (the haggle
+ * continues over SMS — same engine, same floor). Everything else (mount,
+ * accent, split/fallback) works the same.
+ *
  * data-split opts into the A/B lift experiment: the fraction of visitors routed
  * to the negotiated widget (0.9 → 90% treatment, 10% control sent to data-fallback).
  * Absent → no experiment, everyone gets the widget (unchanged behavior).
@@ -84,14 +89,16 @@
     if (opts.fallbackUrl) p.set("fallback", opts.fallbackUrl);
     if (opts.session) p.set("session", opts.session);
     if (opts.token) p.set("token", opts.token);
-    return ORIGIN + "/widget?" + p.toString();
+    // SMS install: the compact phone-input page instead of the chat UI.
+    return ORIGIN + (opts.channel === "sms" ? "/widget/sms?" : "/widget?") + p.toString();
   }
 
-  function resolveEl(el) {
+  function resolveEl(el, compact) {
     if (!el) {
       var d = document.createElement("div");
-      d.style.cssText =
-        "position:fixed;right:20px;bottom:20px;width:380px;height:560px;max-width:92vw;max-height:80vh;z-index:2147483000;box-shadow:0 20px 60px rgba(0,0,0,.45);border-radius:16px;overflow:hidden";
+      d.style.cssText = compact
+        ? "position:fixed;right:20px;bottom:20px;width:340px;height:150px;max-width:92vw;z-index:2147483000;box-shadow:0 20px 60px rgba(0,0,0,.45);border-radius:16px;overflow:hidden"
+        : "position:fixed;right:20px;bottom:20px;width:380px;height:560px;max-width:92vw;max-height:80vh;z-index:2147483000;box-shadow:0 20px 60px rgba(0,0,0,.45);border-radius:16px;overflow:hidden";
       document.body.appendChild(d);
       return d;
     }
@@ -111,7 +118,7 @@
       return { cohort: "control" };
     }
 
-    var host = resolveEl(opts.el);
+    var host = resolveEl(opts.el, opts.channel === "sms");
     if (!host) { console.error("[bouncr] mount target not found:", opts.el); return; }
 
     var iframe = document.createElement("iframe");
@@ -154,6 +161,7 @@
       theme: { accent: d.accent, mode: d.mode },
       fallbackUrl: d.fallback,
       split: d.split, // A/B treatment fraction (e.g. "0.9"); absent → no experiment
+      channel: d.channel, // "sms" → the phone-input install; absent → chat widget
     });
   }
 })();

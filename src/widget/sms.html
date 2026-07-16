@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bouncr</title>
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<style>
+  :root {
+    --accent: #7C3AED;
+    --bg: #0B0B12;
+    --panel: #14141c;
+    --text: #ECECF1;
+    --muted: #8a8a99;
+    --line: #26262f;
+    --mint: #34D399;
+    --err: #F87171;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: stretch;
+  }
+  .card { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 16px 18px; }
+  .pitch { display: flex; align-items: center; gap: 10px; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto;
+    background: var(--accent); display: grid; place-items: center;
+    font-weight: 700; font-size: 14px; color: #fff;
+  }
+  .pitch b { font-size: 14px; display: block; }
+  .pitch span { font-size: 12px; color: var(--muted); }
+  form { display: flex; gap: 8px; }
+  input {
+    flex: 1; min-width: 0; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    font: inherit; font-variant-numeric: tabular-nums;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 10px;
+    padding: 10px 16px; font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  button:disabled { opacity: .6; cursor: default; }
+  .note { font-size: 11px; color: var(--muted); }
+  .note.err { color: var(--err); }
+  .sent { display: none; flex-direction: column; gap: 6px; text-align: center; }
+  .sent .big { font-size: 26px; }
+  .sent b { font-size: 15px; }
+  .sent span { font-size: 12px; color: var(--muted); }
+  body.done .live { display: none; }
+  body.done .sent { display: flex; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="live pitch">
+      <div class="avatar">🪩</div>
+      <div><b>text me — let's talk price</b><span>drop your number, I'll hit you up</span></div>
+    </div>
+    <form class="live" id="f">
+      <input id="phone" type="tel" inputmode="tel" autocomplete="tel"
+             placeholder="(555) 000-0000" aria-label="phone number" required />
+      <button id="go" type="submit">text me</button>
+    </form>
+    <div class="live note" id="note">US numbers, or +country code · msg &amp; data rates apply · text STOP anytime</div>
+    <div class="sent">
+      <div class="big">📲</div>
+      <b>sent — check your texts</b>
+      <span>the haggle continues in your messages · negotiated via Bouncr</span>
+    </div>
+  </div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var BASE = q.get("base") || location.origin;
+  var PLAN = q.get("plan") || "";
+  var accent = q.get("accent");
+  if (accent && /^[0-9a-fA-F]{3,8}$/.test(accent)) {
+    document.documentElement.style.setProperty("--accent", "#" + accent);
+  }
+
+  var form = document.getElementById("f");
+  var input = document.getElementById("phone");
+  var go = document.getElementById("go");
+  var note = document.getElementById("note");
+  var noteDefault = note.textContent;
+
+  // Client-side mirror of the server's E.164 rule — instant feedback only;
+  // the server re-validates (never trust the client, Spec §10).
+  function looksLikePhone(v) {
+    var c = v.replace(/[\s().\-]/g, "");
+    return /^\+\d{8,15}$/.test(c) || /^\d{10}$/.test(c) || /^1\d{10}$/.test(c);
+  }
+
+  function fail(msg) {
+    note.textContent = msg;
+    note.classList.add("err");
+    go.disabled = false;
+    go.textContent = "text me";
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    note.classList.remove("err");
+    note.textContent = noteDefault;
+    var v = input.value;
+    if (!looksLikePhone(v)) return fail("that number doesn't look right — add a +country code?");
+    go.disabled = true;
+    go.textContent = "sending…";
+    fetch(BASE + "/v1/sms/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ plan_id: PLAN, phone: v }),
+    })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); })
+      .then(function (r) {
+        if (r.ok) { document.body.classList.add("done"); return; }
+        if (r.status === 429) return fail("easy — try again in a minute");
+        if (r.status === 409) return fail("we already talked — come back later");
+        fail((r.body && r.body.error) || "couldn't send that — try again");
+      })
+      .catch(function () { fail("network hiccup — try again"); });
+  });
+})();
+</script>
+</body>
+</html>

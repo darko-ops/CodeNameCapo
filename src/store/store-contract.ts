@@ -109,6 +109,24 @@ export function runStoreContract(ctx: StoreCtx): void {
     expect([up2.status, up2.currentAsk]).toEqual(["accepted", 40]); // prior currentAsk preserved
   });
 
+  it("findOpenSessionByUser: newest OPEN session for (user, channel); closed/other-channel never match", async () => {
+    const s = ctx.store();
+    const { plan } = await seed(s);
+    const phone = uniq("+1555");
+    expect(await s.findOpenSessionByUser(phone, "sms")).toBeNull(); // unknown → null
+    const tick = () => new Promise((r) => setTimeout(r, 2)); // distinct created_at ms
+    const older = await s.createSession(newSession(plan.id, { endUserRef: phone, channel: "sms" }));
+    await tick();
+    await s.createSession(newSession(plan.id, { endUserRef: phone, channel: "web" })); // other channel
+    await tick();
+    const newer = await s.createSession(newSession(plan.id, { endUserRef: phone, channel: "sms" }));
+    expect((await s.findOpenSessionByUser(phone, "sms"))?.id).toBe(newer.id); // newest wins
+    await s.updateSession(newer.id, { status: "walked" });
+    expect((await s.findOpenSessionByUser(phone, "sms"))?.id).toBe(older.id); // closed → falls back
+    await s.updateSession(older.id, { status: "expired" });
+    expect(await s.findOpenSessionByUser(phone, "sms")).toBeNull(); // nothing open left
+  });
+
   it("turns: ordered listTurns; listTurnsByPlan JOINs across the plan's sessions; extracted JSONB round-trips", async () => {
     const s = ctx.store();
     const { plan } = await seed(s);

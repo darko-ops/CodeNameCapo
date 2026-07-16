@@ -208,6 +208,14 @@ export class PostgresStore implements Store {
     return rows.map((r) => this.toTurn(r));
   }
 
+  async findOpenSessionByUser(endUserRef: string, channel: string): Promise<SessionRecord | null> {
+    const rows = await this.sql`
+      select * from bouncr.sessions
+      where end_user_ref = ${endUserRef} and channel = ${channel} and status = 'open'
+      order by created_at desc limit 1`;
+    return rows[0] ? this.toSession(rows[0]) : null;
+  }
+
   async listSessionsByPlan(planId: string): Promise<SessionRecord[]> {
     const rows = await this.sql`
       select * from bouncr.sessions where plan_id = ${planId} order by created_at desc`;

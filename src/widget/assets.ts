@@ -8,4 +8,4 @@
  *
  * After editing any src/widget/*.html or embed.js, run `npm run bundle:assets`.
  */
-export { WIDGET_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML, RESET_HTML } from "./assets.generated.js";
+export { WIDGET_HTML, SMS_HTML, EMBED_JS, DEMO_HTML, DASHBOARD_HTML, LANDING_HTML, ONBOARD_HTML, RESET_HTML } from "./assets.generated.js";

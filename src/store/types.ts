@@ -254,6 +254,12 @@ export interface Store {
   updateSession(id: string, patch: SessionPatch): Promise<SessionRecord>;
   /** All sessions for a plan, newest first — analytics (§11). */
   listSessionsByPlan(planId: string): Promise<SessionRecord[]>;
+  /**
+   * Newest OPEN session for a (end_user_ref, channel) pair, across plans — the
+   * SMS channel's routing lookup: an inbound text carries only the sender's
+   * number, so the phone must resolve to its one live negotiation.
+   */
+  findOpenSessionByUser(endUserRef: string, channel: string): Promise<SessionRecord | null>;
 
   addTurn(rec: NewTurn): Promise<TurnRecord>;
   listTurns(sessionId: string): Promise<TurnRecord[]>;

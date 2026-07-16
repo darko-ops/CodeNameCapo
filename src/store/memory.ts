@@ -160,6 +160,17 @@ export class MemoryStore implements Store {
     return (this.turns.get(sessionId) ?? []).map(clone);
   }
 
+  async findOpenSessionByUser(endUserRef: string, channel: string): Promise<SessionRecord | null> {
+    let match: SessionRecord | undefined;
+    for (const s of this.sessions.values()) {
+      // >= so a same-ms tie goes to the later insert (Map preserves insertion order).
+      if (s.endUserRef === endUserRef && s.channel === channel && s.status === "open" && (!match || s.createdAt >= match.createdAt)) {
+        match = s;
+      }
+    }
+    return match ? clone(match) : null;
+  }
+
   async listSessionsByPlan(planId: string): Promise<SessionRecord[]> {
     return [...this.sessions.values()]
       .filter((s) => s.planId === planId)
